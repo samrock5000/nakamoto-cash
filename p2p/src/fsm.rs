@@ -1,8 +1,10 @@
 //! Bitcoin protocol state machine.
 #![warn(missing_docs)]
 use crossbeam_channel as chan;
+use fastrand::Rng;
 use log::*;
 
+pub mod bloom_cache;
 pub mod event;
 pub mod fees;
 pub mod filter_cache;
@@ -10,6 +12,7 @@ pub mod output;
 
 // Sub-protocols.
 mod addrmgr;
+mod bfmgr;
 mod cbfmgr;
 mod invmgr;
 mod peermgr;
@@ -20,8 +23,12 @@ mod syncmgr;
 mod tests;
 
 use addrmgr::AddressManager;
+use bfmgr::BloomManager;
 use cbfmgr::FilterManager;
 use invmgr::InventoryManager;
+use nakamoto_common::bitcoin::network::message_bloom::FilterLoad;
+use nakamoto_common::bloom::store::cache::PrivacySegment;
+use nakamoto_common::collections::HashMap;
 use output::Outbox;
 use peermgr::PeerManager;
 use pingmgr::PingManager;
@@ -205,8 +212,8 @@ impl From<(&peermgr::PeerInfo, &peermgr::Connection)> for Peer {
 pub enum Command {
     /// Get block header at height.
     GetBlockByHeight(Height, chan::Sender<Option<BlockHeader>>),
-    /// Get block header with a given hash.
-    GetBlockByHash(BlockHash, chan::Sender<Option<(Height, BlockHeader)>>),
+    /// Get a block from the active chain.
+    GetBlock(BlockHash),
     /// Get connected peers.
     GetPeers(ServiceFlags, chan::Sender<Vec<Peer>>),
     /// Get the tip of the active chain.
@@ -226,6 +233,15 @@ pub enum Command {
         to: Bound<Height>,
         /// Scripts to match on.
         watch: Vec<Script>,
+    },
+    /// Rescan the chain for matching scripts and addresses.
+    MerkleBlockRescan {
+        /// Start scan from this height. If unbounded, start at the current height.
+        from: Bound<Height>,
+        /// Stop scanning at this height. If unbounded, don't stop scanning.
+        to: Bound<Height>,
+        // /// Scripts to match on.
+        // watch: Vec<Script>,
     },
     /// Update the watchlist with the provided scripts.
     Watch {
@@ -254,19 +270,27 @@ pub enum Command {
     ),
     /// Get a previously submitted transaction.
     GetSubmittedTransaction(Txid, chan::Sender<Option<Transaction>>),
+    /// Load Bloom filters to the .
+    LoadBloomFilter(FilterLoad, net::SocketAddr),
+    /// Get mempool
+    GetMempool,
 }
 
 impl fmt::Debug for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::GetBlockByHash(hash, _) => write!(f, "GetBlockByHash({})", hash),
+            Self::GetMempool => write!(f, "GetMempool"),
             Self::GetBlockByHeight(height, _) => write!(f, "GetBlockByHeight({})", height),
+            Self::GetBlock(hash) => write!(f, "GetBlock({})", hash),
             Self::GetPeers(flags, _) => write!(f, "GetPeers({})", flags),
             Self::GetTip(_) => write!(f, "GetTip"),
             Self::RequestBlock(hash) => write!(f, "GetBlock({})", hash),
             Self::RequestFilters(range, _) => write!(f, "GetFilters({:?})", range),
             Self::Rescan { from, to, watch } => {
                 write!(f, "Rescan({:?}, {:?}, {:?})", from, to, watch)
+            }
+            Self::MerkleBlockRescan { from, to } => {
+                write!(f, "MerkleBlockRescan ({:?}, {:?},)", from, to,)
             }
             Self::Watch { watch } => {
                 write!(f, "Watch({:?})", watch)
@@ -279,6 +303,9 @@ impl fmt::Debug for Command {
             Self::ImportAddresses(addrs) => write!(f, "ImportAddresses({:?})", addrs),
             Self::SubmitTransaction(tx, _) => write!(f, "SubmitTransaction({:?})", tx),
             Self::GetSubmittedTransaction(txid, _) => write!(f, "GetSubmittedTransaction({txid})"),
+            Self::LoadBloomFilter(_filter, _addr) => {
+                write!(f, "LoadBloomFilter()" /* filter */,)
+            }
         }
     }
 }
@@ -344,6 +371,8 @@ pub struct StateMachine<T, F, P, C> {
     pingmgr: PingManager<C>,
     /// CBF (Compact Block Filter) manager.
     cbfmgr: FilterManager<F, C>,
+    /// BFM (Bloom Filter) manager.
+    bfmgr: BloomManager<C>,
     /// Peer manager.
     peermgr: PeerManager<C>,
     /// Inventory manager.
@@ -407,6 +436,8 @@ pub struct Config {
     pub hooks: Hooks,
     /// Configured limits.
     pub limits: Limits,
+    /// Bloom Filter
+    pub bloom_segments: HashMap<u32, PrivacySegment>,
 }
 
 impl Default for Config {
@@ -424,6 +455,7 @@ impl Default for Config {
             user_agent: USER_AGENT,
             hooks: Hooks::default(),
             limits: Limits::default(),
+            bloom_segments: HashMap::with_hasher(Rng::new().into()),
         }
     }
 }
@@ -485,6 +517,7 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
             params,
             hooks,
             limits,
+            bloom_segments,
         } = config;
 
         let outbox = Outbox::new(protocol_version);
@@ -518,7 +551,7 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
                 retry_max_wait: LocalDuration::from_mins(60),
                 retry_min_wait: LocalDuration::from_secs(1),
                 required_services,
-                preferred_services: syncmgr::REQUIRED_SERVICES | cbfmgr::REQUIRED_SERVICES,
+                preferred_services: syncmgr::REQUIRED_SERVICES | bfmgr::REQUIRED_SERVICES,
                 services,
                 user_agent,
             },
@@ -535,7 +568,9 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
             peers,
             clock.clone(),
         );
-        let invmgr = InventoryManager::new(rng, clock.clone());
+        let invmgr = InventoryManager::new(rng.clone(), clock.clone());
+
+        let bfmgr = BloomManager::new(rng, clock.clone(), bloom_segments);
 
         Self {
             tree,
@@ -545,6 +580,7 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
             syncmgr,
             pingmgr,
             cbfmgr,
+            bfmgr,
             peermgr,
             invmgr,
             last_tick: LocalTime::default(),
@@ -594,6 +630,7 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> Iterato
             .or_else(|| self.invmgr.next())
             .or_else(|| self.pingmgr.next())
             .or_else(|| self.addrmgr.next())
+            .or_else(|| self.bfmgr.next())
             .or_else(|| self.cbfmgr.next())
             .map(|io| match io {
                 output::Io::Write(addr, payload) => Io::Write(
@@ -629,6 +666,7 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
         self.invmgr.received_event(e.clone(), &self.tree);
         self.syncmgr.received_event(e.clone(), &mut self.tree);
         self.addrmgr.received_event(e.clone());
+        self.bfmgr.received_event(e.clone(), &mut self.tree);
         self.peermgr.received_event(e, &self.tree);
     }
 
@@ -640,10 +678,8 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
             Command::QueryTree(query) => {
                 query(&self.tree);
             }
-            Command::GetBlockByHash(hash, reply) => {
-                let header = self.tree.get_block(&hash).map(|(k, v)| (k, *v));
-
-                reply.send(header).ok();
+            Command::GetBlock(hash) => {
+                self.invmgr.get_block(hash);
             }
             Command::GetBlockByHeight(height, reply) => {
                 let header = self.tree.get_block_by_height(height).copied();
@@ -675,7 +711,7 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
             Command::ImportHeaders(headers, reply) => {
                 let result = self
                     .syncmgr
-                    .import_blocks(headers.into_iter(), &mut self.tree);
+                    .import_block_headers(headers.into_iter(), &mut self.tree);
 
                 match result {
                     Ok(import_result) => {
@@ -716,7 +752,6 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
                 // can figure in more than one block.
                 self.cbfmgr.watch_transaction(&tx);
 
-                // TODO: For BIP 339 support, we can send a `WTx` inventory here.
                 let peers = self.invmgr.announce(tx);
 
                 if let Some(peers) = NonEmpty::from_vec(peers) {
@@ -731,6 +766,9 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
                     self.invmgr.get_block(hash);
                 }
             }
+            Command::MerkleBlockRescan { from, to } => {
+                self.bfmgr.merkle_scan(from, to, &self.tree);
+            }
             Command::Watch { watch } => {
                 self.cbfmgr.watch(watch);
             }
@@ -738,6 +776,8 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
                 let tx = self.invmgr.get_submitted_tx(txid);
                 reply.send(tx).ok();
             }
+            Command::LoadBloomFilter(filter, addr) => self.bfmgr.send_bloom_filter(addr, filter),
+            Command::GetMempool => self.bfmgr.get_mempool(),
         }
     }
 }
@@ -756,6 +796,7 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> traits:
         self.syncmgr.initialize(&self.tree);
         self.peermgr.initialize(&mut self.addrmgr);
         self.cbfmgr.initialize(&self.tree);
+        self.bfmgr.initialize(&self.tree);
         self.outbox.event(Event::Ready {
             tip: self.tree.height(),
             filter_tip: self.cbfmgr.filters.height(),
@@ -779,7 +820,7 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> traits:
             return;
         }
 
-        debug!(target: "p2p", "Received {:?} from {}", cmd, addr);
+        // debug!(target: "p2p", "Received {:?} from {}", cmd, addr);
 
         if let Err(err) = (self.hooks.on_message)(addr, &msg.payload, &self.outbox) {
             debug!(
@@ -831,6 +872,7 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> traits:
         self.addrmgr.timer_expired();
         self.peermgr.timer_expired(&mut self.addrmgr);
         self.cbfmgr.timer_expired(&self.tree);
+        self.bfmgr.timer_expired(&self.tree);
 
         #[cfg(not(test))]
         let local_time = self.clock.local_time();

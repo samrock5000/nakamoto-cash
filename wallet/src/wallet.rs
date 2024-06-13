@@ -104,7 +104,7 @@ impl<H: Handle> Wallet<H> {
         if addresses.is_empty() {
             log::info!("No addresses found, requesting from hardware device..");
 
-            match self.hw.request_addresses(0..16, hw::AddressFormat::P2WPKH) {
+            match self.hw.request_addresses(0..16, hw::AddressFormat::P2PKH) {
                 Ok(addrs) => {
                     for (ix, addr) in addrs {
                         self.db.add_address(&addr, ix, None)?;
@@ -265,6 +265,16 @@ impl<H: Handle> Wallet<H> {
                     height,
                     balance,
                 );
+            }
+            client::Event::ReceivedMatchedTx { transaction } => {
+                // for t in &matches {
+                self.apply(&transaction, watch);
+                // }
+                let balance = self.balance()?;
+                self.ui.set_balance(balance);
+                self.ui.redraw(&self.db, term)?;
+
+                log::info!("Processed tx (balance = {})", balance,);
             }
             client::Event::Scanned { height, .. } => {
                 self.ui.handle_synced(height, self.tips.header);

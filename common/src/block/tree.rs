@@ -5,7 +5,11 @@ use std::collections::BTreeMap;
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::consensus::params::Params;
 use bitcoin::hash_types::BlockHash;
+use bitcoin::pow::Target as PowTarget;
+use bitcoin::pow::U256;
 use bitcoin::util::uint::Uint256;
+// use bitcoin::{Block, Network};
+use bitcoincash as bitcoin;
 
 use thiserror::Error;
 
@@ -222,7 +226,7 @@ pub trait BlockReader {
         let last_adjustment_time = last_adjustment_block.time;
 
         if params.no_pow_retargeting {
-            return last_adjustment_block.bits;
+            return last_adjustment_block.bits.to_consensus();
         }
 
         let actual_timespan = last_time - last_adjustment_time;
@@ -245,5 +249,161 @@ pub trait BlockReader {
         }
 
         BlockHeader::compact_target_from_u256(&target)
+    }
+    /// ASERT DAA
+    fn next_asert_difficulty_target(
+        &self,
+        last_height: Height,
+        last_time: BlockTime,
+        last_target: Target,
+        params: &Params,
+    ) -> Bits {
+        let anchor = ASERTAnchor {
+            height: last_height as i64,
+            nbits: BlockHeader::compact_target_from_u256(&last_target),
+            prev_timestamp: last_time as i64,
+        };
+
+        const ASERT_HALFLIFE: i64 = 2 * 24 * 60 * 60;
+        let pow_limit = params.pow_limit;
+        let ref_block_target = Target::from_u64(anchor.nbits as u64).unwrap();
+
+        let time_diff = last_height as i64 - anchor.prev_timestamp;
+        let height_diff = last_height as i64 - anchor.height;
+
+        let exponent: i64 = ((time_diff - params.pow_target_spacing as i64 * (height_diff + 1))
+            * 65536)
+            / ASERT_HALFLIFE;
+        let mut shifts = exponent >> 16;
+        let frac = u16::try_from(shifts).unwrap() as u64;
+        let factor: u32 = 65536
+            + ((195766423245049u64 * frac
+                + 971821376u64 * frac * frac
+                + 5127u64 * frac * frac * frac
+                + (1u64 << 47))
+                >> 48) as u32;
+        let mut next_target = BlockHeader::compact_target_from_u256(&ref_block_target) * factor;
+        shifts -= 16;
+        if shifts <= 0 {
+            next_target >>= -shifts;
+        } else {
+            let next_target_shifted = next_target << shifts;
+            if (next_target_shifted >> shifts) != next_target {
+                next_target = BlockHeader::compact_target_from_u256(&pow_limit);
+            } else {
+                next_target = next_target_shifted;
+            }
+        }
+        next_target
+    }
+    /// November 13, 2017 hard fork
+    fn next_cash_work_difficulty(
+        &self,
+        height: Height,
+        last_time: BlockTime,
+        params: &Params,
+    ) -> Bits {
+        if params.allow_min_difficulty_blocks
+            && last_time as u64
+                > self.get_block_by_height(height).unwrap().time as u64
+                    + params.pow_target_spacing * 2
+        {
+            return BlockHeader::compact_target_from_u256(&params.pow_limit);
+        }
+        // _ = last_time;
+        // let last_height = height;
+        // let first_height = last_height - 144;
+        let indexlast = self.get_suitable_blocks(self.tip().1);
+        let indexfirst =
+            self.get_suitable_blocks(*self.get_block_by_height(self.height() - 144).unwrap());
+
+        self.compute_target(indexfirst, indexlast, &params)
+        // next_target
+    }
+    /// Given a vector of block headers, returns the median block based on their timestamps.
+    fn get_suitable_blocks(&self, block: BlockHeader) -> BlockHeader {
+        // let mut blocks = self.locate_headers(
+        //     &vec![self.get_block_by_height(height - 3).unwrap().block_hash()],
+        //     self.get_block_by_height(height).unwrap().block_hash(),
+        //     3,
+        // );
+
+        let blk2 = *self.get_block(&block.block_hash()).unwrap().1;
+        let blk1 = *self.get_block(&block.prev_blockhash).unwrap().1;
+        let blk0 = *self.get_block(&blk1.prev_blockhash).unwrap().1;
+        let mut blocks: Vec<BlockHeader> = vec![blk0, blk1, blk2];
+        assert!(blocks.len() >= 3, "Need at least 3 blocks to find a median");
+
+        if blocks[0].time > blocks[2].time {
+            std::mem::swap(&mut blocks[0].clone(), &mut blocks[2]);
+        };
+        if blocks[0].time > blocks[1].time {
+            std::mem::swap(&mut blocks[0].clone(), &mut blocks[1]);
+        };
+        if blocks[1].time > blocks[2].time {
+            std::mem::swap(&mut blocks[1].clone(), &mut blocks[2]);
+        };
+        return blocks[1];
+    }
+
+    /// Compute a target based on the work done between 2 blocks and the time
+    /// required to produce that work.
+    fn compute_target(
+        &self,
+        first_height: BlockHeader,
+        last_height: BlockHeader,
+        params: &Params,
+    ) -> Bits {
+        assert!(
+            self.get_block(&last_height.block_hash()).unwrap().0
+                >= self.get_block(&first_height.block_hash()).unwrap().0,
+            "Last block must have a higher height than first"
+        );
+        let target_spacing = params.pow_target_spacing as u128;
+
+        let daa_block_work = self.locate_headers(
+            &vec![first_height.block_hash()],
+            last_height.block_hash(),
+            150,
+        );
+        // let daa_len = daa_block_work.len().clone();
+        let mut daa_work = U256::default();
+        for header in daa_block_work {
+            daa_work = daa_work + header.get_work().0;
+        }
+        daa_work = daa_work * U256::from(target_spacing);
+
+        let mut time_span = (last_height.time - first_height.time) as u128;
+
+        if time_span > 288 * target_spacing {
+            time_span = 288 * target_spacing;
+        } else if time_span < 72 * target_spacing {
+            time_span = 72 * target_spacing;
+        }
+
+        // let projected_work = daa_work * (U256::from(params.pow_target_spacing));
+        let projected_work = daa_work / U256::from(time_span);
+
+        let mut new_target = U256::inverse(&projected_work);
+        if new_target > PowTarget::MAX.0 {
+            new_target = PowTarget::MAX.0
+        }
+        PowTarget(new_target).to_compact_lossy().to_consensus()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ASERTAnchor {
+    pub height: i64,         // 661647,
+    pub nbits: u32,          // 0x1804dafe,
+    pub prev_timestamp: i64, // 1605447844,
+}
+impl Default for ASERTAnchor {
+    fn default() -> Self {
+        ASERTAnchor {
+            height: 661647,
+            nbits: 0x1804dafe,
+            prev_timestamp: 1605447844,
+        }
     }
 }

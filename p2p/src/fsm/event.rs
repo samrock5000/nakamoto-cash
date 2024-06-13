@@ -5,7 +5,8 @@ use std::{error, fmt, io, net};
 use nakamoto_common::bitcoin::network::address::Address;
 use nakamoto_common::bitcoin::network::constants::ServiceFlags;
 use nakamoto_common::bitcoin::network::message::NetworkMessage;
-use nakamoto_common::bitcoin::{Transaction, Txid};
+use nakamoto_common::bitcoin::network::message_bloom::FilterLoad;
+use nakamoto_common::bitcoin::{MerkleBlock, Transaction, Txid};
 use nakamoto_common::block::filter::BlockFilter;
 use nakamoto_common::block::{Block, BlockHash, BlockHeader, Height};
 use nakamoto_common::nonempty::NonEmpty;
@@ -31,6 +32,21 @@ pub enum Event {
         /// Local time.
         time: LocalTime,
     },
+    /// A BloomFilter was loaded to a peer
+    PeerLoadedBloomFilter {
+        /// the filter loaded to peer
+        filter: FilterLoad,
+        /// Peer address.
+        peer: PeerId,
+    },
+    /// A BloomFilter was received from client
+    LoadBloomFilter {
+        /// the peer address
+        addr: PeerId,
+        /// the bloom filter sent from client
+        filter: FilterLoad,
+    },
+
     /// Peer connected. This is fired when the physical TCP/IP connection
     /// is established. Use [`Event::PeerNegotiated`] to know when the P2P handshake
     /// has completed.
@@ -91,8 +107,6 @@ pub enum Event {
         version: u32,
         /// Transaction relay.
         relay: bool,
-        /// Support for `wtxidrelay`.
-        wtxid_relay: bool,
     },
     /// The best known height amongst connected peers has been updated.
     /// Note that there is no guarantee that this height really exists;
@@ -142,6 +156,26 @@ pub enum Event {
         /// Matching block.
         block: Block,
     },
+    /// We received a merkle block and extracted transactions matches.
+    MerkleBlockProcessed {
+        /// A merkle block was proccesed.
+        merkle_block: MerkleBlock,
+        /// The height at which the block was processed.
+        height: Height,
+        /// The matches this merkle block returned.
+        matches: Vec<Txid>,
+        /// Whether or not this block matched any of the watched scripts.
+        matched: bool,
+        /// Filter was cached.
+        cached: bool,
+    },
+    /// We received a merkle block from the network.
+    ReceivedMerkleBlock {
+        /// Block height.
+        height: Height,
+        /// Matching block.
+        merkle_block: MerkleBlock,
+    },
     /// Block header chain is in sync with network.
     BlockHeadersSynced {
         /// Block height.
@@ -152,6 +186,19 @@ pub enum Event {
     /// Block headers imported. Emitted when headers are fetched from peers,
     /// or imported by the user.
     BlockHeadersImported {
+        /// New tip hash.
+        hash: BlockHash,
+        /// New tip height.
+        height: Height,
+        /// Block headers connected to the active chain.
+        connected: NonEmpty<(Height, BlockHeader)>,
+        /// Block headers reverted from the active chain.
+        reverted: Vec<(Height, BlockHeader)>,
+        /// Set if this import triggered a chain reorganization.
+        reorg: bool,
+    },
+    /// BlockFilter Imported
+    BlockFilterImported {
         /// New tip hash.
         hash: BlockHash,
         /// New tip height.
@@ -211,6 +258,18 @@ pub enum Event {
         /// Stop height.
         height: Height,
     },
+    /// A merkle block rescan has stopped.
+    MerkleBlockRescanStopped {
+        /// Stop height.
+        height: Height,
+    },
+    /// A merkle block rescan has started.
+    MerkleBlockRescanStarted {
+        /// Start height.
+        start: Height,
+        /// End height.
+        stop: Option<Height>,
+    },
     /// Filter headers synced up to block header height.
     FilterHeadersSynced {
         /// Block height.
@@ -222,6 +281,11 @@ pub enum Event {
         txid: Txid,
         /// The new transaction status.
         status: TxStatus,
+    },
+    /// A matched transaction was receiced.
+    ReceivedMatchedTx {
+        /// The Transaction.
+        transaction: Transaction,
     },
     /// Scanned the chain up to a certain height.
     Scanned {
@@ -242,6 +306,8 @@ pub enum Event {
         /// Error source.
         error: Arc<dyn error::Error + 'static + Sync + Send>,
     },
+    /// Connected to four atleast peers
+    FourOrMorePeersConnected,
 }
 
 impl fmt::Display for Event {
@@ -250,6 +316,25 @@ impl fmt::Display for Event {
             Self::Initializing => {
                 write!(fmt, "Initializing peer-to-peer system..")
             }
+            Self::FourOrMorePeersConnected => {
+                write!(fmt, "Connected to atleast 4 peers")
+            }
+            // TODO update filter to to segment
+            Self::PeerLoadedBloomFilter { filter, peer } => {
+                _ = filter;
+                write!(fmt, "Bloom filter loaded to peer {}", peer)
+            }
+            Self::MerkleBlockRescanStarted { start, .. } => {
+                write!(fmt, "A merkle block rescan started at height {start}")
+            }
+            Self::MerkleBlockRescanStopped { height } => {
+                write!(fmt, "A merkle block resan stopped {height}")
+            }
+            Self::LoadBloomFilter { addr, filter } => {
+                _ = filter;
+                _ = addr;
+                write!(fmt, "A bloom filter load request from client")
+            }
             Self::Ready { .. } => {
                 write!(fmt, "Ready to process events and commands")
             }
@@ -257,6 +342,25 @@ impl fmt::Display for Event {
                 write!(
                     fmt,
                     "Chain in sync with network at height {height} ({hash})"
+                )
+            }
+            Self::ReceivedMerkleBlock {
+                height,
+                merkle_block,
+            } => {
+                let hash = merkle_block.header.block_hash();
+                _ = merkle_block;
+                write!(fmt, "MerkleBlock {hash} received at height {height}")
+            }
+            Self::BlockFilterImported {
+                hash,
+                height,
+                reorg,
+                ..
+            } => {
+                write!(
+                    fmt,
+                    "Block Filters imported to {hash} at height {height} (reorg={reorg})"
                 )
             }
             Self::BlockHeadersImported {
@@ -289,10 +393,13 @@ impl fmt::Display for Event {
             Self::BlockProcessed { block, height, .. } => {
                 write!(
                     fmt,
-                    "Block {} processed at height {}",
+                    "Block {:?} processed at height {}",
                     block.block_hash(),
                     height
                 )
+            }
+            Self::MerkleBlockProcessed { .. } => {
+                write!(fmt, "Merkle Block processed")
             }
             Self::BlockMatched { height, .. } => {
                 write!(fmt, "Block matched at height {}", height)
@@ -347,6 +454,9 @@ impl fmt::Display for Event {
             }
             Self::PeerHeightUpdated { height } => {
                 write!(fmt, "Peer height updated to {}", height)
+            }
+            Self::ReceivedMatchedTx { transaction } => {
+                write!(fmt, "Received transaction match {}", transaction.txid())
             }
             Self::PeerMisbehaved { addr, reason } => {
                 write!(fmt, "Peer {addr} misbehaved: {reason}")

@@ -238,6 +238,9 @@ impl Ui {
             client::Loading::FilterHeaderVerified { height } => {
                 self.status = Status::VerifyingFilterHeaders { height };
             }
+            client::Loading::BloomFilterLoaded { .. } => {
+                // self.status = Status::VerifyingFilterHeaders { .. };
+            }
         }
         // Limit redraws to 60hz.
         if self

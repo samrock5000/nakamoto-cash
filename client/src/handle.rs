@@ -4,6 +4,7 @@ use std::net;
 use std::ops::{RangeBounds, RangeInclusive};
 
 use crossbeam_channel as chan;
+use nakamoto_common::bitcoin::util::bloom::BloomFilter;
 use thiserror::Error;
 
 use nakamoto_common::bitcoin::network::constants::ServiceFlags;
@@ -14,7 +15,9 @@ use nakamoto_common::bitcoin::{Script, Txid};
 use nakamoto_common::bitcoin::network::message::NetworkMessage;
 use nakamoto_common::block::filter::BlockFilter;
 use nakamoto_common::block::tree::{BlockReader, ImportResult};
-use nakamoto_common::block::{self, Block, BlockHash, BlockHeader, Height, Transaction};
+use nakamoto_common::block::{
+    self, Block, BlockHash, BlockHeader, Height, MerkleBlock, Transaction,
+};
 use nakamoto_common::nonempty::NonEmpty;
 use nakamoto_p2p::fsm::Link;
 use nakamoto_p2p::fsm::{self, Command, CommandError, Event, GetFiltersError, Peer};
@@ -65,8 +68,8 @@ pub trait Handle: Sized + Send + Sync + Clone {
     /// Get the tip of the active chain. Returns the height of the chain, the header,
     /// and the total accumulated work.
     fn get_tip(&self) -> Result<(Height, BlockHeader, Uint256), Error>;
-    /// Get a block header from the block header cache.
-    fn get_block(&self, hash: &BlockHash) -> Result<Option<(Height, BlockHeader)>, Error>;
+    /// Get a full block from the network.
+    fn get_block(&self, hash: &BlockHash) -> Result<(), Error>;
     /// Get a block header by height, from the block header cache.
     fn get_block_by_height(&self, height: Height) -> Result<Option<BlockHeader>, Error>;
     /// Query the local block tree using the given function. To return results from
@@ -87,7 +90,8 @@ pub trait Handle: Sized + Send + Sync + Clone {
     /// Request compact filters from the network. The filters will be sent over the channel created
     /// by [`Handle::filters`] as they are received.
     fn request_filters(&self, range: RangeInclusive<Height>) -> Result<(), Error>;
-
+    /// Subscribe to merkle blocks received.
+    fn merkle_blocks(&self) -> chan::Receiver<(MerkleBlock, Height)>;
     /// Subscribe to blocks received.
     fn blocks(&self) -> chan::Receiver<(Block, Height)>;
     /// Subscribe to compact filters received.
@@ -169,4 +173,6 @@ pub trait Handle: Sized + Send + Sync + Clone {
     fn wait_for_height(&self, h: Height) -> Result<BlockHash, Error>;
     /// Shutdown the node process.
     fn shutdown(self) -> Result<(), Error>;
+    /// load a peer with a bloom filter
+    fn load_bloom_filter(&self, addr: net::SocketAddr, filter: BloomFilter) -> Result<(), Error>;
 }

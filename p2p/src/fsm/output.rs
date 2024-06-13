@@ -11,6 +11,7 @@ pub use crossbeam_channel as chan;
 use nakamoto_common::bitcoin::network::address::Address;
 use nakamoto_common::bitcoin::network::message::NetworkMessage;
 use nakamoto_common::bitcoin::network::message_blockdata::{GetHeadersMessage, Inventory};
+use nakamoto_common::bitcoin::network::message_bloom::FilterLoad;
 use nakamoto_common::bitcoin::network::message_filter::{
     CFHeaders, CFilter, GetCFHeaders, GetCFilters,
 };
@@ -82,8 +83,8 @@ impl Outbox {
 
     /// Push a message to the channel.
     pub fn message(&mut self, addr: PeerId, payload: NetworkMessage) -> &Self {
-        debug!(target: "p2p", "Sending {:?} to {}", payload.cmd(), addr);
-
+        debug!(target: "p2p", "Sending {} to {}", payload.cmd(),  addr);
+        info!(target: "p2p", "Sending {} to {}", payload.cmd(),  addr);
         self.push(Io::Write(addr, payload));
         self
     }
@@ -123,12 +124,6 @@ impl Outbox {
     /// Send a `verack` message.
     pub fn verack(&mut self, addr: PeerId) -> &mut Self {
         self.message(addr, NetworkMessage::Verack);
-        self
-    }
-
-    /// Send a BIP-339 `wtxidrelay` message.
-    pub fn wtxid_relay(&mut self, addr: PeerId) -> &mut Self {
-        self.message(addr, NetworkMessage::WtxidRelay);
         self
     }
 
@@ -240,6 +235,16 @@ impl Outbox {
     /// Sends a `tx` message to a peer.
     pub fn tx(&mut self, addr: PeerId, tx: Transaction) {
         self.message(addr, NetworkMessage::Tx(tx));
+    }
+
+    /// Sends a `filter load` message to a peer.
+    pub fn send_bloom_filter_load(&mut self, addr: &PeerId, filter: FilterLoad) {
+        self.message(*addr, NetworkMessage::FilterLoad(filter));
+    }
+
+    /// Sends a `MemPool` message to a peer.
+    pub fn get_mempool(&mut self, addr: &PeerId) {
+        self.message(*addr, NetworkMessage::MemPool);
     }
 
     /// Output an error.

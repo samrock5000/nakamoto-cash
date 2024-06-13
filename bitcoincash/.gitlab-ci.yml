@@ -1,0 +1,53 @@
+stages:
+  - test
+  - deploy
+
+.default_build:
+  before_script:
+    - apt-get update > /dev/null
+    - apt-get -y install
+        binutils-dev libunwind8-dev
+        libcurl4-openssl-dev libelf-dev libdw-dev cmake gcc libiberty-dev > /dev/null
+  script:
+    - ./contrib/test.sh
+  variables:
+    AS_DEPENDENCY: 1
+    # for "cargo new dep_test"
+    USER: dummyuser
+
+stable:
+  stage: test
+  image: rust:latest
+  extends: .default_build
+  variables:
+    DO_FUZZ: 1
+
+
+nightly:
+  stage: test
+  image: rustlang/rust:nightly
+  extends: .default_build
+
+  variables:
+    DO_BENCH: 1
+
+rust_1_47:
+  stage: test
+  image: rust:1.47
+  extends: .default_build
+  variables:
+    TRAVIS_RUST_VERSION: "1.47.0"
+
+pages:
+    stage: deploy
+    image: rust:latest
+    rules:
+        - if: $CI_COMMIT_BRANCH == "master"
+    script:
+        - cargo doc --no-deps -p bitcoincash
+        - cargo rustdoc -p bitcoincash -- --document-private-items
+        - rm -rf public
+        - mv target/doc public
+    artifacts:
+        paths:
+            - public

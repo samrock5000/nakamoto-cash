@@ -8,6 +8,7 @@ use thiserror::Error;
 
 pub use bitcoin::hash_types::{FilterHash, FilterHeader};
 pub use bitcoin::util::bip158::BlockFilter;
+use bitcoincash as bitcoin;
 
 use super::Height;
 use crate::block::store::{self, Genesis};

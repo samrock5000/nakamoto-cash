@@ -16,6 +16,8 @@ pub const MAINNET: &[(u64, &str)] = &[
     (250000, "000000000000003887df1f29024b06fc2200b55f8af8f35453d7be294df2d214"),
     (279000, "0000000000000001ae8c72a0b0c301f67e3afca10e819efa9041e458e9bd7e40"),
     (295000, "00000000000000004d9b4ef50f0f9d686fd69db2e03af35a100370c64632a983"),
+    (478559, "000000000000000000651ef99cb9fcbe0dadde1d424bd9f15ff20136191a5eec"),
+    (661648, "0000000000000000029e471c41818d24b8b74c911071c4ef0b4a0509f9b5a8ce"),
 ];
 
 /// Testnet checkpoints.
@@ -24,8 +26,33 @@ pub const TESTNET: &[(u64, &str)] = &[
     (546, "000000002a936ca763904c3c35fce2f3556c559c0214345d31b1bcebf76acb70"),
 ];
 
-/// Regtest checkpoints.
+/// Chipnet checkpoints.
 pub const REGTEST: &[(u64, &str)] = &[];
 
-/// Signet checkpoints.
-pub const SIGNET: &[(u64, &str)] = &[];
+/// chipnet checkpoints.
+pub const CHIPNET: &[(u64, &str)] = &[
+    (
+        2,
+        "00000000b0c65b1e03baace7d5c093db0d6aac224df01484985ffd5e86a1a20c",
+    ),
+    (
+        6,
+        "00000000d71b9b1f7e13b0c9b218a12df6526c1bcd1b667764b8693ae9a413cb",
+    ),
+    (
+        3000,
+        "00000000253cdbca769f44f8c54f49be05c1926bd856670c4cf387080d86ff3e",
+    ),
+    (
+        5000,
+        "000000009f092d074574a216faec682040a853c4f079c33dfd2c3ef1fd8108c4",
+    ),
+    (
+        16845,
+        "00000000fb325b8f34fe80c96a5f708a08699a68bbab82dba4474d86bd743077",
+    ),
+    (
+        188843,
+        "0000000009210bc5d55ff530b107942edda0bc684419d22b245ca2302b631c5b",
+    ),
+];

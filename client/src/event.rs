@@ -25,6 +25,15 @@ pub enum Loading {
         /// Height of verified filter header.
         height: Height,
     },
+    /// header cache is finished loading
+    BlockHeaderLoadComplete,
+    /// A bloom filter was loaded from store.
+    /// This event only fires during startup.
+    BloomFilterLoaded {
+        // /// Height of verified filter header.
+        // TODO maybe use segments
+        // height: Height,
+    },
 }
 
 impl fmt::Display for Loading {
@@ -38,6 +47,12 @@ impl fmt::Display for Loading {
             }
             Self::FilterHeaderVerified { height } => {
                 write!(fmt, "Filter header #{} verified", height)
+            }
+            Self::BloomFilterLoaded { .. } => {
+                write!(fmt, "Bloom filter loaded")
+            }
+            Self::BlockHeaderLoadComplete { .. } => {
+                write!(fmt, "Block header cache loaded")
             }
         }
     }

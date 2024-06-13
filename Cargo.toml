@@ -1,5 +1,5 @@
 [package]
-name = "nakamoto"
+name = "nakamoto-cash"
 description = "Privacy-preserving Bitcoin light-client"
 documentation = "https://docs.rs/nakamoto"
 homepage = "https://cloudhead.io/nakamoto/"
@@ -12,32 +12,26 @@ edition = "2021"
 
 [workspace]
 members = [
-  "common",
-  "p2p",
-  "chain",
-  "node",
-  "test",
-  "client",
-  "wallet",
-  "net",
+    "common",
+    "p2p",
+    "chain",
+    "node",
+    "test",
+    "client",
+    "wallet",
+    "net",
+    "nakamoto-ffi",
 ]
-default-members = [
-  "common",
-  "p2p",
-  "chain",
-  "test",
-  "client",
-  "net",
-]
+default-members = ["common", "p2p", "chain", "test", "client", "net"]
 
 [features]
 default = [
-  "nakamoto-client",
-  "nakamoto-chain",
-  "nakamoto-p2p",
-  "nakamoto-common",
-  "nakamoto-net",
-  "nakamoto-net-poll"
+    "nakamoto-client",
+    "nakamoto-chain",
+    "nakamoto-p2p",
+    "nakamoto-common",
+    "nakamoto-net",
+    "nakamoto-net-poll",
 ]
 
 [dependencies]

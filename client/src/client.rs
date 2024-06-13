@@ -1,6 +1,7 @@
 //! Core nakamoto client functionality. Wraps all the other modules under a unified
 //! interface.
-use std::collections::HashMap;
+use nakamoto_common::bloom::store::cache::PrivacySegment;
+use nakamoto_common::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io;
@@ -11,22 +12,30 @@ use std::path::PathBuf;
 use std::time::{self, SystemTime};
 
 pub use crossbeam_channel as chan;
-
 use nakamoto_chain::block::{store, Block};
+use nakamoto_common::bitcoin::util::bloom::BloomFilter;
+// use nakamoto_chain::bloom::store as bloom_store;
 use nakamoto_chain::filter;
 use nakamoto_chain::filter::cache::FilterCache;
 use nakamoto_chain::filter::cache::StoredHeader;
 use nakamoto_chain::{block::cache::BlockCache, filter::BlockFilter};
+// use nakamoto_common::bloom::store:: cache::FilterCache as BloomFilterCache;
 
 use nakamoto_common::bitcoin::network::constants::ServiceFlags;
 use nakamoto_common::bitcoin::network::message::NetworkMessage;
+use nakamoto_common::bitcoin::network::message_bloom::BloomFlags;
+use nakamoto_common::bitcoin::network::message_bloom::FilterLoad;
 use nakamoto_common::bitcoin::network::Address;
 use nakamoto_common::bitcoin::util::uint::Uint256;
+use nakamoto_common::bitcoin::MerkleBlock;
 use nakamoto_common::bitcoin::Txid;
+use nakamoto_common::bitcoin_hashes::hex::FromHex;
 use nakamoto_common::block::store::{Genesis as _, Store as _};
 use nakamoto_common::block::time::{AdjustedTime, RefClock};
 use nakamoto_common::block::tree::{self, BlockReader, ImportResult};
 use nakamoto_common::block::{BlockHash, BlockHeader, Height, Transaction};
+use nakamoto_common::bloom::store::*;
+
 use nakamoto_common::nonempty::NonEmpty;
 use nakamoto_common::p2p::peer::{Source, Store as _};
 use nakamoto_p2p::fsm;
@@ -70,6 +79,8 @@ pub struct Config {
     pub services: ServiceFlags,
     /// Configured limits.
     pub limits: Limits,
+    /// Bloom Filters
+    pub bloom_segments: HashMap<u32, PrivacySegment>,
 }
 
 /// Configuration for loading event handling.
@@ -126,6 +137,7 @@ impl Default for Config {
             hooks: Hooks::default(),
             limits: Limits::default(),
             services: ServiceFlags::NONE,
+            bloom_segments: HashMap::with_hasher(fastrand::Rng::new().into()),
         }
     }
 }
@@ -204,6 +216,16 @@ impl<R: Reactor> Client<R> {
                 p.emit((block, height));
             }
         });
+        let (merkle_blocks_pub, merkle_blocks) = event::broadcast(|e, p| {
+            if let fsm::Event::ReceivedMerkleBlock {
+                merkle_block,
+                height,
+                ..
+            } = e
+            {
+                p.emit((merkle_block, height));
+            }
+        });
         let (filters_pub, filters) = event::broadcast(|e, p| {
             if let fsm::Event::FilterReceived {
                 filter,
@@ -220,6 +242,7 @@ impl<R: Reactor> Client<R> {
         let publisher = Publisher::default()
             .register(event_pub)
             .register(blocks_pub)
+            .register(merkle_blocks_pub)
             .register(filters_pub)
             .register(publisher);
 
@@ -230,6 +253,7 @@ impl<R: Reactor> Client<R> {
             commands: commands_tx,
             events,
             blocks,
+            merkle_blocks,
             filters,
             subscriber,
             waker: reactor.waker(),
@@ -250,7 +274,7 @@ impl<R: Reactor> Client<R> {
     /// loading events.
     pub fn load(
         self,
-        config: Config,
+        mut config: Config,
         loading: impl Into<LoadingHandler>,
     ) -> Result<ClientRunner<R>, Error> {
         let loading = loading.into();
@@ -298,6 +322,66 @@ impl<R: Reactor> Client<R> {
         let cache = BlockCache::new(store, params, &checkpoints)?
             .load_with(|height| loading.send(Loading::BlockHeaderLoaded { height }))?;
 
+        // log::info!(target: "client", "Initializing bloom filters..");
+        /*
+        Temp, wallet client should load filters
+        */
+        // let mut script_hash = Vec::from_hex("347eeb9896b64a484d1019a16075c194a17e6081").unwrap();
+        // Vec::from_hex("64462479fb3bf5b307ab42123dea68d9ec6db353").unwrap();
+        // Vec::from_hex("7dcc5bd98ad7f437957c28d4d0312d91818d1d236531b5ae78e59e10b9610155").unwrap();
+        // Vec::from_hex("84487d5b5448dcb272921965eebb266728b25853").unwrap();
+
+        // let mut privacy_segment = PrivacySegment::default();
+        // let tweak = Rng::new().u32(u32::MIN..u32::MAX);
+        // privacy_segment.filter = BloomFilter::new(10, 0.0001, tweak, 0);
+        // let mut bf = BloomFilter::new(10000, 0.001, 987987, 0);
+        // bf.insert(&mut script_hash);
+        // privacy_segment.filter.insert(&mut script_hash);
+        // config.bloom_segments.insert(0, privacy_segment.clone());
+        // config.bloom_segments.insert(1, privacy_segment.clone());
+        // config.bloom_segments.insert(2, privacy_segment.clone());
+        // config.bloom_segments.insert(3, privacy_segment.clone());
+
+        // let bloomfilters_path = dir.join("bloomfilters.db");
+        // let bloomfilter_store = match nakamoto_common::bloom::store::File::create(
+        //     &bloomfilters_path,
+        //     privacy_segment.clone(),
+        // ) {
+        //     Ok(store) => {
+        //         log::info!(target: "client", "Initializing new bloom filter store {:?}", bloomfilters_path);
+        //         store
+        //     }
+        //     Err(nakamoto_common::bloom::store::Error::Io(e))
+        //         if e.kind() == io::ErrorKind::AlreadyExists =>
+        //     {
+        //         log::info!(target: "client", "Found existing bloomstore {:?}", bloomfilters_path);
+        //         let store = nakamoto_common::bloom::store::File::open(
+        //             bloomfilters_path,
+        //             privacy_segment.clone(),
+        //         )?;
+
+        //         if store.check().is_err() {
+        //             log::warn!(target: "client", "Corruption detected in bloom store, healing..");
+        //             //TODO FIX
+        //             // store.heal()?; // Rollback store to the last valid header.
+        //         }
+        //         // bloom_filters.
+        //         log::info!(target: "client", "Bloom filter segments found" );
+
+        //         // config.bloom_segments.insert(0, store.get(0).unwrap());
+        //         // config.bloom_segments.insert(1, store.get(0).unwrap());
+        //         store
+        //     }
+        //     Err(err) => {
+        //         return Err(error::Error::Io(std::io::Error::new(
+        //             io::ErrorKind::NotFound,
+        //             err,
+        //         )))
+        //     }
+        // };
+        // // let segments = bloomfilter_store.len();
+        // log::info!(target: "client", "Loading Bloom filter cache: segments {:?}",config.bloom_segments.len());
+        // log::info!(target: "client", "Loading Bloom filter Store {:?}",bloomfilter_store);
         log::info!(target: "client", "Initializing block filters..");
 
         let cfheaders_genesis = filter::cache::StoredHeader::genesis(network);
@@ -321,6 +405,7 @@ impl<R: Reactor> Client<R> {
             }
             Err(err) => return Err(err.into()),
         };
+
         log::info!(target: "client", "Loading filter headers from store..");
 
         let filters = FilterCache::load_with(cfheaders_store, |height| {
@@ -344,16 +429,26 @@ impl<R: Reactor> Client<R> {
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
                 log::info!(target: "client", "Found existing peer cache {:?}", peers_path);
                 let cache = peer::Cache::open(&peers_path).map_err(Error::PeerStore)?;
-                let cfpeers = cache
-                    .iter()
-                    .filter(|(_, ka)| ka.addr.services.has(ServiceFlags::COMPACT_FILTERS))
-                    .count();
+                // let cfpeers = cache
+                //     .iter()
+                //     .filter(|(_, ka)| ka.addr.services.has(ServiceFlags::COMPACT_FILTERS))
+                //     .count();
 
+                // log::info!(
+                //     target: "client",
+                //     "{} peer(s) found.. {} with compact filters support",
+                //     cache.len(),
+                //     cfpeers
+                // );
+                let bfpeers = cache
+                    .iter()
+                    .filter(|(_, ka)| ka.addr.services.has(ServiceFlags::BLOOM))
+                    .count();
                 log::info!(
                     target: "client",
-                    "{} peer(s) found.. {} with compact filters support",
+                    "{} peer(s) found.. {} with bloom filters support",
                     cache.len(),
-                    cfpeers
+                    bfpeers
                 );
                 cache
             }
@@ -378,7 +473,7 @@ impl<R: Reactor> Client<R> {
 
             log::info!(target: "client", "{} seeds added to address book", peers.len());
         }
-
+        loading.send(Loading::BlockHeaderLoadComplete);
         Ok(ClientRunner {
             listen,
             commands: self.commands,
@@ -405,7 +500,6 @@ impl<R: Reactor> Client<R> {
             self.publisher,
             self.commands,
         )?;
-
         Ok(())
     }
 
@@ -420,6 +514,7 @@ pub struct Handle<W: Waker> {
     commands: chan::Sender<Command>,
     events: event::Subscriber<fsm::Event>,
     blocks: event::Subscriber<(Block, Height)>,
+    merkle_blocks: event::Subscriber<(MerkleBlock, Height)>,
     filters: event::Subscriber<(BlockFilter, BlockHash, Height)>,
     subscriber: event::Subscriber<Event>,
     waker: W,
@@ -432,6 +527,7 @@ impl<W: Waker> Clone for Handle<W> {
     fn clone(&self) -> Self {
         Self {
             blocks: self.blocks.clone(),
+            merkle_blocks: self.merkle_blocks.clone(),
             commands: self.commands.clone(),
             events: self.events.clone(),
             filters: self.filters.clone(),
@@ -473,6 +569,24 @@ impl<W: Waker> Handle<W> {
 }
 
 impl<W: Waker> handle::Handle for Handle<W> {
+    fn load_bloom_filter(
+        &self,
+        addr: net::SocketAddr,
+        filter: BloomFilter,
+    ) -> Result<(), handle::Error> {
+        let bloom_filter = FilterLoad {
+            filter: filter.content,
+            hash_funcs: filter.hashes,
+            tweak: filter.tweak,
+            flags: match filter.flags {
+                0 => BloomFlags::None,
+                1 => BloomFlags::All,
+                2 => BloomFlags::PubkeyOnly,
+                _ => BloomFlags::None,
+            },
+        };
+        self.command(Command::LoadBloomFilter(bloom_filter, addr))
+    }
     fn get_tip(&self) -> Result<(Height, BlockHeader, Uint256), handle::Error> {
         let (transmit, receive) = chan::bounded::<(Height, BlockHeader, Uint256)>(1);
         self._command(Command::GetTip(transmit))?;
@@ -480,11 +594,10 @@ impl<W: Waker> handle::Handle for Handle<W> {
         Ok(receive.recv()?)
     }
 
-    fn get_block(&self, hash: &BlockHash) -> Result<Option<(Height, BlockHeader)>, handle::Error> {
-        let (transmit, receive) = chan::bounded(1);
-        self._command(Command::GetBlockByHash(*hash, transmit))?;
+    fn get_block(&self, hash: &BlockHash) -> Result<(), handle::Error> {
+        self.command(Command::GetBlock(*hash))?;
 
-        Ok(receive.recv()?)
+        Ok(())
     }
 
     fn get_block_by_height(&self, height: Height) -> Result<Option<BlockHeader>, handle::Error> {
@@ -538,6 +651,9 @@ impl<W: Waker> handle::Handle for Handle<W> {
 
     fn blocks(&self) -> chan::Receiver<(Block, Height)> {
         self.blocks.subscribe()
+    }
+    fn merkle_blocks(&self) -> chan::Receiver<(MerkleBlock, Height)> {
+        self.merkle_blocks.subscribe()
     }
 
     fn filters(&self) -> chan::Receiver<(BlockFilter, BlockHash, Height)> {

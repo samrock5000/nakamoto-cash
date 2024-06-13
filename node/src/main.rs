@@ -21,13 +21,9 @@ pub struct Options {
     #[argh(switch)]
     pub testnet: bool,
 
-    /// use the bitcoin signet network (default: false)
+    /// use the bitcoin chipnet network (default: false)
     #[argh(switch)]
-    pub signet: bool,
-
-    /// use the bitcoin regtest network (default: false)
-    #[argh(switch)]
-    pub regtest: bool,
+    pub chipnet: bool,
 
     /// only connect to IPv4 addresses (default: false)
     #[argh(switch, short = '4')]
@@ -59,10 +55,8 @@ fn main() {
 
     let network = if opts.testnet {
         Network::Testnet
-    } else if opts.signet {
-        Network::Signet
-    } else if opts.regtest {
-        Network::Regtest
+    } else if opts.chipnet {
+        Network::Chipnet
     } else {
         Network::Mainnet
     };

@@ -7,10 +7,13 @@
 #[cfg(test)]
 pub mod test;
 
-use std::cmp::Ordering;
+// use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ops::ControlFlow;
 
+// use common::bitcoin::pow::{CompactTarget, Target};
+// use common::bitcoin_hashes::hex::ToHex;
+// use common::block::Block;
 use nakamoto_common as common;
 use nakamoto_common::bitcoin;
 use nakamoto_common::bitcoin::blockdata::block::BlockHeader;
@@ -26,7 +29,10 @@ use nakamoto_common::block::{
     iter::Iter,
     store::Store,
     time::{self, Clock},
-    Bits, BlockTime, Height, Work,
+    // Bits,
+    BlockTime,
+    Height,
+    Work,
 };
 use nakamoto_common::nonempty::NonEmpty;
 
@@ -444,71 +450,100 @@ impl<S: Store<Header = BlockHeader>> BlockCache<S> {
         clock: &impl Clock,
     ) -> Result<(), Error> {
         assert_eq!(tip.hash(), header.prev_blockhash);
+        _ = clock;
+        // TODO MOVE THESE CONSTANTS later
+        // CHIP ASERT 16844
+        // MAIN ASERT 661647
+        // DAA MAIN 504031
+        // DAA CHIP 3000
 
-        let compact_target = if self.params.allow_min_difficulty_blocks
-            && (tip.height + 1) % self.params.difficulty_adjustment_interval() != 0
-        {
-            if header.time > tip.time + self.params.pow_target_spacing as BlockTime * 2 {
-                block::pow_limit_bits(&self.params.network)
-            } else {
-                self.next_min_difficulty_target(&self.params)
-            }
-        } else {
-            self.next_difficulty_target(tip.height, tip.time, tip.target(), &self.params)
-        };
+        // const ASSERTHEIGHT: u64 = 16844;
+        // const DAAHEIGHT: u64 = 3000;
+        // let compact_target = if self.params.allow_min_difficulty_blocks
+        //     && (tip.height + 1) % self.params.difficulty_adjustment_interval() != 0
+        // {
+        //     if header.time > tip.time + self.params.pow_target_spacing as BlockTime * 2 {
+        //         block::pow_limit_bits(&self.params.network)
+        //     } else {
+        //         if tip.height >= DAAHEIGHT {
+        //             self.next_cash_work_difficulty(tip.height, tip.time, &self.params)
+        //         } else {
+        //             self.next_min_difficulty_target(&self.params)
+        //         }
+        //     }
+        // } else {
+        //     if tip.height >= DAAHEIGHT {
+        //         self.next_cash_work_difficulty(tip.height, tip.time, &self.params)
+        //     } else if tip.height >= ASSERTHEIGHT {
+        //         self.next_asert_difficulty_target(
+        //             tip.height,
+        //             self.get_block_by_height(tip.height - 1).unwrap().time,
+        //             self.get_block_by_height(tip.height - 1).unwrap().target(),
+        //             &self.params,
+        //         )
+        //     } else {
+        //         self.next_difficulty_target(tip.height, tip.time, tip.target(), &self.params)
+        //     }
+        // };
 
-        let target = BlockHeader::u256_from_compact_target(compact_target);
+        // let target = BlockHeader::u256_from_compact_target(compact_target);
+        // match header.validate_pow(&target) {
+        //     Err(bitcoin::util::Error::BlockBadProofOfWork) => {
+        //         log::error!(target: "CACHE", "BlockBadProofOfWork TARGET {}", target);
+        //         return Err(Error::InvalidBlockPoW);
+        //     }
+        //     Err(bitcoin::util::Error::BlockBadTarget) => {
+        //         // log::error!(target: "CACHE", "InvalidBlockTarget: {:?} expeted {:?}", target,header.target());
+        //         return Err(Error::InvalidBlockTarget(header.target(), target));
+        //     }
+        //     Err(_) => unreachable!(),
+        //     Ok(_data) => {} //         let mut current = tip.height + (100 - tip.height % 100) % 100;
+        //                     //         while current <= tip.height {
+        //                     //             current += 100;
+        //                     //             log::debug!(target: "BLOCK", "POW VALID {} < {}\n{}", data,target,current);
+        //                     //         }
+        //                     //     }
+        // }
 
-        match header.validate_pow(&target) {
-            Err(bitcoin::util::Error::BlockBadProofOfWork) => {
-                return Err(Error::InvalidBlockPoW);
-            }
-            Err(bitcoin::util::Error::BlockBadTarget) => {
-                return Err(Error::InvalidBlockTarget(header.target(), target));
-            }
-            Err(_) => unreachable!(),
-            Ok(_) => {}
-        }
+        // // Validate against block checkpoints.
+        // let height = tip.height + 1;
 
-        // Validate against block checkpoints.
-        let height = tip.height + 1;
+        // if let Some(checkpoint) = self.checkpoints.get(&height) {
+        //     let hash = header.block_hash();
 
-        if let Some(checkpoint) = self.checkpoints.get(&height) {
-            let hash = header.block_hash();
+        //     if &hash != checkpoint {
+        //         return Err(Error::InvalidBlockHash(hash, height));
+        //     }
+        // }
 
-            if &hash != checkpoint {
-                return Err(Error::InvalidBlockHash(hash, height));
-            }
-        }
-
-        // A timestamp is accepted as valid if it is greater than the median timestamp of
-        // the previous MEDIAN_TIME_SPAN blocks, and less than the network-adjusted
-        // time + MAX_FUTURE_BLOCK_TIME.
-        if header.time <= self.median_time_past(height) {
-            return Err(Error::InvalidBlockTime(header.time, Ordering::Less));
-        }
-        if header.time > clock.block_time() + time::MAX_FUTURE_BLOCK_TIME {
-            return Err(Error::InvalidBlockTime(header.time, Ordering::Greater));
-        }
+        // // A timestamp is accepted as valid if it is greater than the median timestamp of
+        // // the previous MEDIAN_TIME_SPAN blocks, and less than the network-adjusted
+        // // time + MAX_FUTURE_BLOCK_TIME.
+        // if header.time <= self.median_time_past(height) {
+        //     return Err(Error::InvalidBlockTime(header.time, Ordering::Less));
+        // }
+        // if header.time > clock.block_time() + time::MAX_FUTURE_BLOCK_TIME {
+        //     return Err(Error::InvalidBlockTime(header.time, Ordering::Greater));
+        // }
 
         Ok(())
     }
 
-    /// Get the next minimum-difficulty target. Only valid in testnet and regtest networks.
-    fn next_min_difficulty_target(&self, params: &Params) -> Bits {
-        assert!(params.allow_min_difficulty_blocks);
+    // /// Get the next minimum-difficulty target. Only valid in testnet and regtest networks.
+    // fn next_min_difficulty_target(&self, params: &Params) -> Bits {
+    //     assert!(params.allow_min_difficulty_blocks);
 
-        let pow_limit_bits = block::pow_limit_bits(&params.network);
+    //     let pow_limit_bits = block::pow_limit_bits(&params.network);
 
-        for (height, header) in self.iter().rev() {
-            if header.bits != pow_limit_bits
-                || height % self.params.difficulty_adjustment_interval() == 0
-            {
-                return header.bits;
-            }
-        }
-        pow_limit_bits
-    }
+    //     for (height, header) in self.iter().rev() {
+    //         if header.bits.to_consensus() != pow_limit_bits
+    //             || height % self.params.difficulty_adjustment_interval() == 0
+    //         {
+    //             return header.bits.to_consensus();
+    //         }
+    //     }
+    //     pow_limit_bits
+    // }
 
     /// Rollback active chain to the given height. Returns the list of rolled-back headers.
     fn rollback(&mut self, height: Height) -> Result<Vec<(Height, BlockHeader)>, Error> {

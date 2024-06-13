@@ -10,6 +10,11 @@ use std::ops::Bound;
 use std::sync::Arc;
 
 use log::*;
+use nakamoto_common::bitcoin::consensus::Encodable;
+use nakamoto_common::bitcoin::network::message_bloom::BloomFlags;
+use nakamoto_common::bitcoin::network::message_bloom::FilterLoad;
+use nakamoto_common::bitcoin::util::bloom::BloomFilter;
+use nakamoto_common::bitcoin_hashes::hex::ToHex;
 
 use super::event::TxStatus;
 use super::{addrmgr, cbfmgr, peermgr, pingmgr, syncmgr};
@@ -837,14 +842,14 @@ fn test_submit_transactions() {
 
     let (transmit, receive) = chan::bounded(1);
     let tx = gen::transaction(&mut rng);
-    let wtxid = tx.txid();
-    let inventory = vec![Inventory::Transaction(wtxid)];
+    let txid = tx.txid();
+    let inventory = vec![Inventory::Transaction(txid)];
     alice.connect(&remote2, Link::Outbound);
     alice.command(Command::SubmitTransaction(tx.clone(), transmit));
 
     let remotes = receive.recv().unwrap().unwrap();
     assert_eq!(Vec::from(remotes), vec![remote1.addr]);
-    assert!(alice.protocol.invmgr.contains(&tx.wtxid()));
+    assert!(alice.protocol.invmgr.contains(&tx.txid()));
 
     alice.tock();
     alice
@@ -1059,8 +1064,8 @@ fn test_confirmed_transaction() {
     alice.command(Command::SubmitTransaction(tx2.clone(), transmit));
     alice.tock();
 
-    assert!(alice.protocol.invmgr.contains(&tx1.wtxid()));
-    assert!(alice.protocol.invmgr.contains(&tx2.wtxid()));
+    assert!(alice.protocol.invmgr.contains(&tx1.txid()));
+    assert!(alice.protocol.invmgr.contains(&tx2.txid()));
 
     alice.protocol.invmgr.get_block(blk1.block_hash());
     alice.protocol.invmgr.get_block(blk2.block_hash());
@@ -1170,7 +1175,7 @@ fn test_submitted_transaction_filtering() {
     alice.command(Command::SubmitTransaction(tx.clone(), transmit));
     alice.tock();
 
-    assert!(alice.protocol.invmgr.contains(&tx.wtxid()));
+    assert!(alice.protocol.invmgr.contains(&tx.txid()));
 
     // The next block will have the matching transaction.
     let matching = gen::block_with(&chain.last().header, vec![tx.clone()], &mut rng);
@@ -1374,7 +1379,7 @@ fn test_transaction_reverted_reconfirm() {
             })
             .expect("The transaction is reverted");
 
-        assert!(alice.protocol.invmgr.contains(&tx.wtxid()));
+        assert!(alice.protocol.invmgr.contains(&tx.txid()));
 
         alice.tock();
         alice
@@ -1579,4 +1584,57 @@ fn test_transaction_mempool_rebroadcast() {
 #[test]
 fn test_getdata_retry() {
     // TODO: Should retry getting blocks
+}
+
+#[test]
+fn test_bloom() {
+    // let words = vec![
+    //     "76a914347eeb9896b64a484d1019a16075c194a17e608188ac",
+    //     "8e9a3c9561485ca9382eeecd6a8128db5a79ff158dada20f8c4796ab19fc8ef0",
+    //     "7b71b7c776836074e8e443813aa84de038ab7d5e5ac10f88f5ff96f186544cdb",
+    //     "0c33eb970b16a2dd3c6ab3fc2f0b9f76ed87bc3697c4a9ba55b2b388ad60a3bf",
+    //     "f838911816bd674fbb22d2ea78894e245162bfe0d787f17db048a89ab37a3efb",
+    //     "1041dfd53ba78b953659ac889be8ed069bcbc6a278607776daf20e8826a986ad",
+    //     "d4cf58e62bde361a33837be4aa98b8d68cd7681348c51916656d60831bd1766e",
+    //     "5d3f73ef88b92591a676583e94d631e5abfc24caf9eefe1629cfb7d25fe21b66",
+    //     "b3f7ef12f434457e9e4dabee0207e8085109dd002c55ff12eb7cc903530e903f",
+    //     "3388ce00c6fc1946c42ab0f7444557fdbe1b72ab8daae41404391dc7dbe77857",
+    //     "1cb9f426981dcb3740d8354821719767b2dbd31106103d3e13093e18c74c52a1",
+    // ];
+
+    // let bloom_filter = BloomFilter::optimal(Murmur3, words.len() as u64, 0.01);
+    // let data = bloom_filter.bit_vec;
+
+    // let f = FilterLoad {
+    //     filter: vec![
+    //         25, 118, 169, 20, 52, 126, 235, 152, 150, 182, 74, 72, 77, 16, 25, 161, 96, 117, 193,
+    //         148, 161, 126, 96, 129, 136, 172, 6, 0, 0, 0, 243, 224, 1, 0, 1, 0, 0, 0,
+    //     ],
+    //     hash_funcs: 1,
+    //     tweak: 12312398,
+    //     flags: BloomFlags::None,
+    // };
+    // println!("{:?}", f);
+}
+#[test]
+fn test_bloom2() {
+    let mut script_hash = Vec::from_hex("64462479fb3bf5b307ab42123dea68d9ec6db353").unwrap();
+    let mut bloom_filter = BloomFilter::new(1000, 0.0001, 987987, 0);
+    bloom_filter.insert(&mut script_hash);
+    let data = bloom_filter.content;
+    let f = FilterLoad {
+        filter: data,
+        hash_funcs: bloom_filter.hashes,
+        tweak: bloom_filter.tweak,
+        flags: match bloom_filter.flags {
+            0 => BloomFlags::None,
+            1 => BloomFlags::All,
+            2 => BloomFlags::PubkeyOnly,
+            _ => BloomFlags::None,
+        },
+    };
+    let mut writer = Vec::new();
+    _ = f.consensus_encode(&mut writer);
+    println!("{:?}\n", f);
+    println!("{:?}", writer.to_hex());
 }

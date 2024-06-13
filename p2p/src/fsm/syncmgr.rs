@@ -1,10 +1,17 @@
 //!
 //! Manages header synchronization with peers.
 //!
+
+use std::ops::RangeInclusive;
+
 use nakamoto_common::bitcoin::consensus::params::Params;
 use nakamoto_common::bitcoin::network::constants::ServiceFlags;
 use nakamoto_common::bitcoin::network::message::NetworkMessage;
 use nakamoto_common::bitcoin::network::message_blockdata::{GetHeadersMessage, Inventory};
+use nakamoto_common::bitcoin::network::message_bloom::{BloomFlags, FilterLoad};
+use nakamoto_common::bitcoin::util::bloom::BloomFilter;
+use nakamoto_common::bitcoin::Block;
+use nakamoto_common::bitcoin_hashes::hex::FromHex;
 use nakamoto_common::bitcoin_hashes::Hash;
 use nakamoto_common::block::time::{Clock, LocalDuration, LocalTime};
 use nakamoto_common::block::tree::{BlockReader, BlockTree, Error, ImportResult};
@@ -25,6 +32,8 @@ pub const TIP_STALE_DURATION: LocalDuration = LocalDuration::from_mins(60 * 2);
 pub const MAX_MESSAGE_HEADERS: usize = 2000;
 /// Maximum number of inventories sent in an `inv` message.
 pub const MAX_MESSAGE_INVS: usize = 50000;
+/// Number of blocks that can be requested at any given time from a single peer
+pub const MAX_BLOCKS_IN_TRANSIT_PER_PEER: usize = 16;
 /// Idle timeout.
 pub const IDLE_TIMEOUT: LocalDuration = LocalDuration::BLOCK_INTERVAL;
 /// Services required from peers for header sync.
@@ -82,7 +91,7 @@ pub struct SyncManager<C> {
     last_peer_sample: Option<LocalTime>,
     /// Last time we idled.
     last_idle: Option<LocalTime>,
-    /// In-flight requests to peers.
+    /// In-flight header requests to peers.
     inflight: HashMap<PeerId, GetHeaders>,
     /// State-machine output.
     outbox: Outbox,
@@ -116,7 +125,7 @@ impl<C: Clock> SyncManager<C> {
         let last_tip_update = None;
         let last_peer_sample = None;
         let last_idle = None;
-        let inflight = HashMap::with_hasher(rng.into());
+        let inflight = HashMap::with_hasher(rng.clone().into());
         let outbox = Outbox::default();
 
         Self {
@@ -161,10 +170,12 @@ impl<C: Clock> SyncManager<C> {
                 ..
             } => {
                 self.peer_negotiated(addr, height, services, link, tree);
+                // self.send_bloom_filter();
             }
             Event::PeerDisconnected { addr, .. } => {
                 self.unregister(&addr);
             }
+            // Event::BlockHeadersSynced { height, hash } => {}
             Event::MessageReceived { from, message } => match message.as_ref() {
                 NetworkMessage::Headers(headers) => {
                     self.received_headers(&from, headers, tree);
@@ -172,6 +183,7 @@ impl<C: Clock> SyncManager<C> {
                 NetworkMessage::SendHeaders => {
                     // We adhere to `sendheaders` by default.
                 }
+
                 NetworkMessage::GetHeaders(GetHeadersMessage {
                     locator_hashes,
                     stop_hash,
@@ -183,7 +195,10 @@ impl<C: Clock> SyncManager<C> {
                     self.received_inv(from, inventory, tree);
                     // TODO: invmgr: Update block availability for this peer.
                 }
-                _ => {}
+                _ => {
+                    log::debug!("Received NetworkMessage {:?}", message);
+                    // log::info!("Received NetworkMessage {:?}", message);
+                }
             },
             _ => {}
         }
@@ -238,7 +253,7 @@ impl<C: Clock> SyncManager<C> {
     }
 
     /// Import blocks into our block tree.
-    pub fn import_blocks<T: BlockTree, I: Iterator<Item = BlockHeader>>(
+    pub fn import_block_headers<T: BlockTree, I: Iterator<Item = BlockHeader>>(
         &mut self,
         blocks: I,
         tree: &mut T,
@@ -314,7 +329,7 @@ impl<C: Clock> SyncManager<C> {
             return;
         }
 
-        match self.import_blocks(headers.into_iter(), tree) {
+        match self.import_block_headers(headers.into_iter(), tree) {
             Ok(ImportResult::TipUnchanged) => {
                 // Try to find a common ancestor that leads up to the first header in
                 // the list we received.
@@ -344,6 +359,7 @@ impl<C: Clock> SyncManager<C> {
                     self.sync(tree);
                 } else {
                     let locators = (vec![hash], BlockHash::all_zeros());
+
                     let timeout = self.config.request_timeout;
 
                     self.request(*from, locators, timeout, OnTimeout::Disconnect);
@@ -365,12 +381,19 @@ impl<C: Clock> SyncManager<C> {
                 self.record_misbehavior(from, "invalid headers in `headers` message");
             }
             // Harmless errors can be ignored.
-            Err(Error::DuplicateBlock(_) | Error::BlockMissing(_)) => {}
+            Err(Error::DuplicateBlock(b) | Error::BlockMissing(b)) => {
+                log::warn!(target: "p2p", "Error::BlockMissing {b} or\nError::DuplicateBlock {b}");
+            }
+            //block import aborted at height {2}: {0} ({1} block(s) imported)
             // TODO: This will be removed.
-            Err(Error::BlockImportAborted(_, _, _)) => {}
+            Err(Error::BlockImportAborted(h, b, c)) => {
+                log::warn!(target: "p2p",  "BlockImportAborted {h}\n{b}\n{c}");
+            }
             // These shouldn't happen here.
             // TODO: Perhaps there's a better way to have this error not show up here.
-            Err(Error::Interrupted | Error::GenesisMismatch) => {}
+            Err(Error::Interrupted | Error::GenesisMismatch) => {
+                log::warn!(target: "p2p", "Error::Interrupted | Error::GenesisMismatch");
+            }
         }
     }
 
@@ -643,7 +666,7 @@ impl<C: Clock> SyncManager<C> {
             let best = self.best_height().unwrap_or(current);
 
             if best > current {
-                self.request(addr, locators, timeout, OnTimeout::Ignore);
+                self.request(addr, locators.clone(), timeout, OnTimeout::Ignore);
                 return true;
             }
         }
@@ -693,5 +716,42 @@ impl<C: Clock> SyncManager<C> {
                 OnTimeout::Ignore,
             );
         }
+    }
+
+    fn send_bloom_filter(&mut self) {
+        for (addr, peer) in &*self.peers {
+            let mut script_hash =
+                // Vec::from_hex("347eeb9896b64a484d1019a16075c194a17e6081").unwrap();
+                // Vec::from_hex("64462479fb3bf5b307ab42123dea68d9ec6db353").unwrap();
+            // Vec::from_hex("7dcc5bd98ad7f437957c28d4d0312d91818d1d236531b5ae78e59e10b9610155").unwrap();
+            Vec::from_hex("84487d5b5448dcb272921965eebb266728b25853").unwrap();
+
+            let mut bloom_filter = BloomFilter::new(1000, 0.0001, 987987, 0);
+            bloom_filter.insert(&mut script_hash);
+            let data = bloom_filter.content;
+
+            let f = FilterLoad {
+                filter: data,
+                hash_funcs: bloom_filter.hashes,
+                tweak: bloom_filter.tweak,
+                flags: match bloom_filter.flags {
+                    0 => BloomFlags::None,
+                    1 => BloomFlags::All,
+                    2 => BloomFlags::PubkeyOnly,
+                    _ => BloomFlags::None,
+                },
+            };
+            self.outbox.send_bloom_filter_load(addr, f)
+        }
+    }
+
+    pub fn received_block<T: BlockTree>(
+        &mut self,
+        from: &PeerId,
+        block: Block,
+        tree: &mut T,
+        msg: &NetworkMessage,
+    ) {
+        log::debug!(target: "p2p", "Received {:#?} data: {} from {} height {}", msg, block.block_hash(), from,tree.height());
     }
 }

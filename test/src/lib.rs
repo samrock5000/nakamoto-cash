@@ -17,7 +17,7 @@ use nakamoto_common::nonempty::NonEmpty;
 pub use fastrand;
 
 pub static BITCOIN_HEADERS: Lazy<NonEmpty<BlockHeader>> = Lazy::new(|| {
-    let genesis = constants::genesis_block(bitcoin::Network::Bitcoin).header;
+    let genesis = constants::genesis_block(bitcoin::Network::Chipnet).header;
     let mut f = File::open(&*self::headers::PATH).unwrap();
     let mut buf = [0; 80];
     let mut headers = NonEmpty::new(genesis);

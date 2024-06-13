@@ -96,6 +96,7 @@ impl Read for Db {
                 TxOut {
                     script_pubkey,
                     value,
+                    token: None,
                 },
             )));
         }
@@ -124,6 +125,8 @@ impl Read for Db {
                 },
                 TxOut {
                     script_pubkey: address.script_pubkey(),
+
+                    token: None,
                     value: *value,
                 },
             ));
@@ -305,7 +308,7 @@ mod tests {
         let db = Db::memory().unwrap();
         let mut rng = fastrand::Rng::new();
         let tx = gen::transaction(&mut rng);
-        let address = Address::from_script(&tx.output[0].script_pubkey, Network::Bitcoin).unwrap();
+        let address = Address::from_script(&tx.output[0].script_pubkey, Network::Chipnet).unwrap();
 
         let out = OutPoint {
             txid: tx.txid(),

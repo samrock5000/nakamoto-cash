@@ -1,21 +1,20 @@
 //! Bitcoin peer network. Eg. *Mainnet*.
-use std::str::FromStr;
-
 use bitcoin::blockdata::block::{Block, BlockHeader};
 use bitcoin::consensus::params::Params;
 use bitcoin::hash_types::BlockHash;
 use bitcoin::hashes::hex::FromHex;
 use bitcoin::network::constants::ServiceFlags;
+use bitcoincash as bitcoin;
+use std::str::FromStr;
 
 use bitcoin_hashes::sha256d;
 
 use crate::block::Height;
 
 /// Peer services supported by nakamoto.
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone)]
 pub enum Services {
     /// Peers with compact filter support.
-    #[default]
     All,
     /// Peers with only block support.
     Chain,
@@ -30,6 +29,12 @@ impl From<Services> for ServiceFlags {
     }
 }
 
+impl Default for Services {
+    fn default() -> Self {
+        Services::All
+    }
+}
+
 /// Bitcoin peer network.
 #[derive(Debug, Copy, Clone)]
 pub enum Network {
@@ -40,7 +45,7 @@ pub enum Network {
     /// Bitcoin regression test net.
     Regtest,
     /// Bitcoin signet.
-    Signet,
+    Chipnet,
 }
 
 impl Default for Network {
@@ -57,7 +62,7 @@ impl FromStr for Network {
             "mainnet" | "bitcoin" => Ok(Self::Mainnet),
             "testnet" => Ok(Self::Testnet),
             "regtest" => Ok(Self::Regtest),
-            "signet" => Ok(Self::Signet),
+            "chipnet" => Ok(Self::Chipnet),
             _ => Err(format!("invalid network specified {:?}", s)),
         }
     }
@@ -69,7 +74,7 @@ impl From<Network> for bitcoin::Network {
             Network::Mainnet => Self::Bitcoin,
             Network::Testnet => Self::Testnet,
             Network::Regtest => Self::Regtest,
-            Network::Signet => Self::Signet,
+            Network::Chipnet => Self::Chipnet,
         }
     }
 }
@@ -79,8 +84,9 @@ impl From<bitcoin::Network> for Network {
         match value {
             bitcoin::Network::Bitcoin => Self::Mainnet,
             bitcoin::Network::Testnet => Self::Testnet,
-            bitcoin::Network::Signet => Self::Signet,
+            bitcoin::Network::Chipnet => Self::Chipnet,
             bitcoin::Network::Regtest => Self::Regtest,
+            _ => Self::Mainnet,
         }
     }
 }
@@ -92,7 +98,7 @@ impl Network {
             Network::Mainnet => 8333,
             Network::Testnet => 18333,
             Network::Regtest => 18334,
-            Network::Signet => 38333,
+            Network::Chipnet => 48333,
         }
     }
 
@@ -104,7 +110,7 @@ impl Network {
             Network::Mainnet => checkpoints::MAINNET,
             Network::Testnet => checkpoints::TESTNET,
             Network::Regtest => checkpoints::REGTEST,
-            Network::Signet => checkpoints::SIGNET,
+            Network::Chipnet => checkpoints::CHIPNET,
         }
         .iter()
         .cloned()
@@ -122,7 +128,7 @@ impl Network {
             Network::Mainnet => "mainnet",
             Network::Testnet => "testnet",
             Network::Regtest => "regtest",
-            Network::Signet => "signet",
+            Network::Chipnet => "chipnet",
         }
     }
 
@@ -130,25 +136,20 @@ impl Network {
     pub fn seeds(&self) -> &[&str] {
         match self {
             Network::Mainnet => &[
-                "seed.bitcoin.sipa.be",          // Pieter Wuille
-                "dnsseed.bluematt.me",           // Matt Corallo
-                "dnsseed.bitcoin.dashjr.org",    // Luke Dashjr
-                "seed.bitcoinstats.com",         // Christian Decker
-                "seed.bitcoin.jonasschnelli.ch", // Jonas Schnelli
-                "seed.btc.petertodd.org",        // Peter Todd
-                "seed.bitcoin.sprovoost.nl",     // Sjors Provoost
-                "dnsseed.emzy.de",               // Stephan Oeste
-                "seed.bitcoin.wiz.biz",          // Jason Maurice
-                "seed.cloudhead.io",             // Alexis Sellier
+                "seed.flowee.cash",
+                "seed-bch.bitcoinforks.org",
+                "btccash-seeder.bitcoinunlimited.info",
+                "seed.bchd.cash",
+                "seed.bch.loping.net",
+                "dnsseed.electroncash.de",
+                "bchseed.c3-soft.com",
+                "bch.bitjson.com",
             ],
             Network::Testnet => &[
-                "testnet-seed.bitcoin.jonasschnelli.ch",
-                "seed.tbtc.petertodd.org",
-                "seed.testnet.bitcoin.sprovoost.nl",
-                "testnet-seed.bluematt.me",
+                //TODO
             ],
             Network::Regtest => &[], // No seeds
-            Network::Signet => &["seed.signet.bitcoin.sprovoost.nl"],
+            Network::Chipnet => &["chipnet.bitjson.com"],
         }
     }
 }
@@ -184,7 +185,7 @@ impl Network {
             Self::Mainnet => genesis::MAINNET,
             Self::Testnet => genesis::TESTNET,
             Self::Regtest => genesis::REGTEST,
-            Self::Signet => genesis::SIGNET,
+            Self::Chipnet => genesis::CHIPNET,
         };
         BlockHash::from_hash(
             sha256d::Hash::from_slice(hash)
@@ -199,6 +200,6 @@ impl Network {
 
     /// Get the network magic number for this network.
     pub fn magic(&self) -> u32 {
-        bitcoin::Network::from(*self).magic()
+        bitcoin::Network::from(*self).net_magic()
     }
 }

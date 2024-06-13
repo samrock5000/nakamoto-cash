@@ -146,11 +146,22 @@ pub struct TestHandle {
 }
 
 impl Handle for TestHandle {
+    fn load_bloom_filter(
+        &self,
+        _addr: net::SocketAddr,
+        _filter: nakamoto_common::bitcoin::util::bloom::BloomFilter,
+    ) -> Result<(), handle::Error> {
+        unimplemented!()
+    }
     fn get_tip(&self) -> Result<(Height, BlockHeader, Uint256), handle::Error> {
         Ok(self.tip)
     }
 
     fn get_block(&self, _hash: &BlockHash) -> Result<Option<(Height, BlockHeader)>, handle::Error> {
+        unimplemented!()
+    }
+
+    fn merkle_blocks(&self) -> chan::Receiver<(nakamoto_test::block::MerkleBlock, Height)> {
         unimplemented!()
     }
 

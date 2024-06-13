@@ -593,7 +593,7 @@ where
                 }
             }
             Io::Event(event) => {
-                let events = self.events.entry(node).or_default();
+                let events = self.events.entry(node).or_insert_with(VecDeque::new);
                 if events.len() >= MAX_EVENTS {
                     warn!(target: "sim", "Dropping event: buffer is full");
                 } else {

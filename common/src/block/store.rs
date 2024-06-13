@@ -6,6 +6,7 @@ use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::consensus::encode;
 use bitcoin::hash_types::FilterHash;
 use bitcoin::util::bip158::BlockFilter;
+use bitcoincash as bitcoin;
 use thiserror::Error;
 
 use crate::network::Network;

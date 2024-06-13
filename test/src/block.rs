@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use nakamoto_common::bitcoin::blockdata::transaction::{OutPoint, TxOut};
+use nakamoto_common::block::BlockHeader;
 
 pub use nakamoto_common::block::*;
 
@@ -65,7 +66,8 @@ pub mod gen {
     use bitcoin::util::bip158;
     use bitcoin::util::uint::Uint256;
 
-    use nakamoto_common::bitcoin::{self, PackedLockTime, Sequence, Witness};
+    use nakamoto_common::bitcoin::pow::CompactTarget;
+    use nakamoto_common::bitcoin::{self, PackedLockTime, Sequence};
     use nakamoto_common::bitcoin_hashes::{hash160, Hash as _};
     use nakamoto_common::block::filter::{BlockFilter, FilterHash, FilterHeader};
     use nakamoto_common::block::*;
@@ -92,7 +94,6 @@ pub mod gen {
                 },
                 script_sig: Script::new(),
                 sequence: Sequence::MAX,
-                witness: Witness::new(),
             };
             input.push(inp);
         }
@@ -124,7 +125,6 @@ pub mod gen {
             previous_output,
             script_sig: Script::new(),
             sequence: Sequence::MAX,
-            witness: Witness::new(),
         };
         let fee = rng.u64(0..value);
         let mut allowance = value - fee;
@@ -137,6 +137,7 @@ pub mod gen {
             output.push(TxOut {
                 value: v,
                 script_pubkey,
+                token: None,
             });
 
             allowance -= v;
@@ -171,6 +172,7 @@ pub mod gen {
         TxOut {
             value: rng.u64(1..100_000_000),
             script_pubkey,
+            token: None,
         }
     }
 
@@ -182,7 +184,6 @@ pub mod gen {
             previous_output: OutPoint::null(),
             script_sig: Script::new(),
             sequence: Sequence::MAX,
-            witness: Witness::new(),
         };
         Transaction {
             version: 1,
@@ -235,7 +236,7 @@ pub mod gen {
             version: 1,
             time,
             nonce: rng.u32(..),
-            bits,
+            bits: CompactTarget::from_consensus(bits),
             merkle_root,
             prev_blockhash: prev_header.block_hash(),
         };
@@ -266,7 +267,7 @@ pub mod gen {
             version: 1,
             time: 0,
             nonce: 0,
-            bits,
+            bits: CompactTarget::from_consensus(bits),
             merkle_root,
             prev_blockhash: BlockHash::all_zeros(),
         };

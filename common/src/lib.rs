@@ -2,12 +2,14 @@
 #![allow(clippy::type_complexity)]
 #![deny(missing_docs, unsafe_code)]
 pub mod block;
+/// does stuff
+pub mod bloom;
 pub mod collections;
 pub mod network;
 pub mod p2p;
 
-pub use bitcoin;
 pub use bitcoin_hashes;
+pub use bitcoincash as bitcoin;
 pub use nakamoto_net as net;
 pub use nonempty;
 
