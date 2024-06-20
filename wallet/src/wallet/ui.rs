@@ -241,6 +241,7 @@ impl Ui {
             client::Loading::BloomFilterLoaded { .. } => {
                 // self.status = Status::VerifyingFilterHeaders { .. };
             }
+            client::Loading::BlockHeaderLoadComplete => {}
         }
         // Limit redraws to 60hz.
         if self

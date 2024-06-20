@@ -271,7 +271,7 @@ pub enum Command {
     /// Get a previously submitted transaction.
     GetSubmittedTransaction(Txid, chan::Sender<Option<Transaction>>),
     /// Load Bloom filters to the .
-    LoadBloomFilter(FilterLoad, net::SocketAddr),
+    LoadBloomFilter(FilterLoad),
     /// Get mempool
     GetMempool,
 }
@@ -303,7 +303,7 @@ impl fmt::Debug for Command {
             Self::ImportAddresses(addrs) => write!(f, "ImportAddresses({:?})", addrs),
             Self::SubmitTransaction(tx, _) => write!(f, "SubmitTransaction({:?})", tx),
             Self::GetSubmittedTransaction(txid, _) => write!(f, "GetSubmittedTransaction({txid})"),
-            Self::LoadBloomFilter(_filter, _addr) => {
+            Self::LoadBloomFilter(_filter) => {
                 write!(f, "LoadBloomFilter()" /* filter */,)
             }
         }
@@ -776,7 +776,7 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
                 let tx = self.invmgr.get_submitted_tx(txid);
                 reply.send(tx).ok();
             }
-            Command::LoadBloomFilter(filter, addr) => self.bfmgr.send_bloom_filter(addr, filter),
+            Command::LoadBloomFilter(filter) => self.bfmgr.send_bloom_filter(filter),
             Command::GetMempool => self.bfmgr.get_mempool(),
         }
     }

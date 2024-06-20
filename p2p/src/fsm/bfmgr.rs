@@ -217,15 +217,14 @@ impl<C: Clock> BloomManager<C> {
                 // self.send_bloom_filter(filter);
             }
             Event::LoadBloomFilter { addr, filter } => {
-                self.send_bloom_filter(addr, filter);
+                _ = addr;
+                self.send_bloom_filter(filter);
             }
             Event::BlockHeadersSynced { .. } => {}
-            Event::ReceivedMerkleBlock { height, .. } => {
-                // log::debug!("ReceivedMerkleBlock at height {height}")
-            }
-
+            // Event::ReceivedMerkleBlock { height, .. } => {}
             Event::MessageReceived { from, message } => match message.as_ref() {
                 NetworkMessage::MerkleBlock(block) => {
+                    _ = from;
                     if let Some((height, _)) = tree.get_block(&block.header.block_hash()) {
                         let event = Event::ReceivedMerkleBlock {
                             height,
@@ -233,25 +232,6 @@ impl<C: Clock> BloomManager<C> {
                         };
                         self.outbox.event(event);
                     }
-
-                    // if let Some((height, _)) = tree.get_block(&block.header.block_hash()) {
-                    //     self.received_merkle_blocks(&height, block.clone(), tree);
-                    //     log::debug!(
-                    //         "BFMG RECEIVED MERKLE BLOCK at HEIGHT {:#?} from {from} ",
-                    //         height
-                    //     );
-                    // let set_segments: Vec<PrivacySegment> = self
-                    //     .bloom_segments
-                    //     .iter()
-                    //     .filter(|(_id, ps)| ps.is_enabled)
-                    //     .map(|(_id, priv_seg)| priv_seg.clone())
-                    //     .collect();
-                    // set_segments.iter().for_each(|priv_segment| {
-                    //     let mut ps = priv_segment.clone();
-                    //     ps.synced_height = height;
-                    //     self.bloom_segments.insert(ps.segment, ps);
-                    // });
-                    // }
                 }
                 NetworkMessage::Tx(tx) => {
                     let txid = tx.txid();
@@ -322,9 +302,12 @@ impl<C: Clock> BloomManager<C> {
         );
     }
 
-    pub fn send_bloom_filter(&mut self, addr: SocketAddr, filter: FilterLoad) {
+    pub fn send_bloom_filter(&mut self, filter: FilterLoad) {
         //TODO filter out segment to peers
-        self.outbox.send_bloom_filter_load(&addr, filter.clone());
+        if let Some((peer_addr, _)) = self.peers.sample() {
+            self.outbox
+                .send_bloom_filter_load(&peer_addr, filter.clone());
+        }
     }
     /// A tick was received.
     pub fn timer_expired<T: BlockReader>(&mut self, _tree: &T) {

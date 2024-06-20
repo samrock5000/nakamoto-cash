@@ -5,9 +5,9 @@ use std::net;
 
 use microserde as serde;
 
-use bitcoincash as bitcoin;
 use bitcoin::network::address::Address;
 use bitcoin::network::constants::ServiceFlags;
+use bitcoincash as bitcoin;
 
 use crate::block::time::Clock;
 use crate::net::time::LocalTime;

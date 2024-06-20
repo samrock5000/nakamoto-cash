@@ -29,12 +29,10 @@ use nakamoto_common::bitcoin::network::Address;
 use nakamoto_common::bitcoin::util::uint::Uint256;
 use nakamoto_common::bitcoin::MerkleBlock;
 use nakamoto_common::bitcoin::Txid;
-use nakamoto_common::bitcoin_hashes::hex::FromHex;
 use nakamoto_common::block::store::{Genesis as _, Store as _};
 use nakamoto_common::block::time::{AdjustedTime, RefClock};
 use nakamoto_common::block::tree::{self, BlockReader, ImportResult};
 use nakamoto_common::block::{BlockHash, BlockHeader, Height, Transaction};
-use nakamoto_common::bloom::store::*;
 
 use nakamoto_common::nonempty::NonEmpty;
 use nakamoto_common::p2p::peer::{Source, Store as _};
@@ -274,18 +272,21 @@ impl<R: Reactor> Client<R> {
     /// loading events.
     pub fn load(
         self,
-        mut config: Config,
+        config: Config,
         loading: impl Into<LoadingHandler>,
     ) -> Result<ClientRunner<R>, Error> {
         let loading = loading.into();
+
         let home = config.root.join(".nakamoto");
+
         let network = config.network;
         let dir = home.join(network.as_str());
+
         let listen = config.listen.clone();
 
         fs::create_dir_all(&dir)?;
-
         let genesis = network.genesis();
+
         let params = network.params();
 
         log::info!(target: "client", "Initializing client ({:?})..", network);
@@ -465,10 +466,12 @@ impl<R: Reactor> Client<R> {
 
         if config.connect.is_empty() && peers.is_empty() {
             log::info!(target: "client", "Address book is empty. Trying DNS seeds..");
+
             peers.seed(
                 network.seeds().iter().map(|s| (*s, network.port())),
                 Source::Dns,
             )?;
+
             peers.flush()?;
 
             log::info!(target: "client", "{} seeds added to address book", peers.len());
@@ -569,11 +572,7 @@ impl<W: Waker> Handle<W> {
 }
 
 impl<W: Waker> handle::Handle for Handle<W> {
-    fn load_bloom_filter(
-        &self,
-        addr: net::SocketAddr,
-        filter: BloomFilter,
-    ) -> Result<(), handle::Error> {
+    fn load_bloom_filter(&self, filter: BloomFilter) -> Result<(), handle::Error> {
         let bloom_filter = FilterLoad {
             filter: filter.content,
             hash_funcs: filter.hashes,
@@ -585,7 +584,7 @@ impl<W: Waker> handle::Handle for Handle<W> {
                 _ => BloomFlags::None,
             },
         };
-        self.command(Command::LoadBloomFilter(bloom_filter, addr))
+        self.command(Command::LoadBloomFilter(bloom_filter))
     }
     fn get_tip(&self) -> Result<(Height, BlockHeader, Uint256), handle::Error> {
         let (transmit, receive) = chan::bounded::<(Height, BlockHeader, Uint256)>(1);

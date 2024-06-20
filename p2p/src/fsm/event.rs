@@ -306,8 +306,6 @@ pub enum Event {
         /// Error source.
         error: Arc<dyn error::Error + 'static + Sync + Send>,
     },
-    /// Connected to four atleast peers
-    FourOrMorePeersConnected,
 }
 
 impl fmt::Display for Event {
@@ -315,9 +313,6 @@ impl fmt::Display for Event {
         match self {
             Self::Initializing => {
                 write!(fmt, "Initializing peer-to-peer system..")
-            }
-            Self::FourOrMorePeersConnected => {
-                write!(fmt, "Connected to atleast 4 peers")
             }
             // TODO update filter to to segment
             Self::PeerLoadedBloomFilter { filter, peer } => {

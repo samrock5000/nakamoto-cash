@@ -196,7 +196,7 @@ impl<C: Clock> SyncManager<C> {
                     // TODO: invmgr: Update block availability for this peer.
                 }
                 _ => {
-                    log::debug!("Received NetworkMessage {:?}", message);
+                    // log::debug!("Received NetworkMessage {:?}", message);
                     // log::info!("Received NetworkMessage {:?}", message);
                 }
             },
