@@ -84,7 +84,6 @@ impl Outbox {
     /// Push a message to the channel.
     pub fn message(&mut self, addr: PeerId, payload: NetworkMessage) -> &Self {
         debug!(target: "p2p", "Sending {} to {}", payload.cmd(),  addr);
-        info!(target: "p2p", "Sending {} to {}", payload.cmd(),  addr);
         self.push(Io::Write(addr, payload));
         self
     }

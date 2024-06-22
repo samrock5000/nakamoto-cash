@@ -187,8 +187,7 @@ impl<C: Clock> InventoryManager<C> {
                     self.received_getdata(from, invs);
                     // TODO: (*self.hooks.on_getdata)(addr, invs, &self.outbox);
                 }
-                NetworkMessage::Inv(msg)=> {
-                    log::debug!("Received INV message {:?}", msg);
+                NetworkMessage::Inv(msg) => {
                     log::info!("Received INV message {:?}", msg);
                 }
                 _ => {}
@@ -639,9 +638,10 @@ mod tests {
             assert!(!invmgr.remaining.is_empty());
 
             let Some((addr, _)) = output::test::messages(&mut invmgr)
-                .find(|(_, m)| matches!(m, NetworkMessage::GetData(i) if i == &inv)) else {
-                    continue;
-                };
+                .find(|(_, m)| matches!(m, NetworkMessage::GetData(i) if i == &inv))
+            else {
+                continue;
+            };
 
             assert!(
                 clock.local_time() - last_request >= REQUEST_TIMEOUT,
