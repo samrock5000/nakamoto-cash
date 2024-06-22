@@ -6,6 +6,7 @@ use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::ops::{Bound, RangeInclusive};
 
+use nakamoto_common::bitcoin::util::bloom::BloomFilter;
 use nakamoto_common::bitcoin_hashes::Hash;
 use thiserror::Error;
 
@@ -18,8 +19,8 @@ use super::{DisconnectReason, Link, Locators, PeerId};
 use nakamoto_common::bitcoin::network::constants::ServiceFlags;
 use nakamoto_common::bitcoin::network::message::NetworkMessage;
 use nakamoto_common::bitcoin::network::message_blockdata::Inventory;
-use nakamoto_common::bitcoin::network::message_bloom::FilterLoad;
-use nakamoto_common::bitcoin::{MerkleBlock, Txid};
+use nakamoto_common::bitcoin::network::message_bloom::{BloomFlags, FilterLoad};
+use nakamoto_common::bitcoin::{cash_addr, MerkleBlock, Txid};
 use nakamoto_common::block::time::{Clock, LocalDuration, LocalTime};
 use nakamoto_common::block::tree::{BlockReader, BlockTree};
 use nakamoto_common::block::{BlockHash, Height};
@@ -196,6 +197,30 @@ impl<C: Clock> BloomManager<C> {
                 //     tree,
                 // );
                 // self.rescan.info();
+                let mut filter =
+                    BloomFilter::new(10000, 0.001, fastrand::u32(0..u32::max_value()), 0);
+                let mut x =
+                    cash_addr::decode("bitcoincash:qp2hq3u9qkstal3r8d5fmccj5sqmrr6mlcn6e949cx")
+                        .unwrap()
+                        .0;
+                filter.insert(&mut x);
+                let bloom_filter = FilterLoad {
+                    filter: filter.content,
+                    hash_funcs: filter.hashes,
+                    tweak: filter.tweak,
+                    flags: match filter.flags {
+                        0 => BloomFlags::None,
+                        1 => BloomFlags::All,
+                        2 => BloomFlags::PubkeyOnly,
+                        _ => BloomFlags::None,
+                    },
+                };
+
+                //
+                //
+                //
+                //
+                _ = self.send_bloom_filter(bloom_filter);
             }
             Event::MerkleBlockProcessed {
                 merkle_block,
@@ -367,71 +392,61 @@ impl<C: Clock> BloomManager<C> {
         if range.is_empty() {
             return Err(GetMerkleBlocksError::InvalidRange);
         }
-        // Don't request more than once from the same peer.
         assert!(*range.end() <= tree.height());
 
-        // TODO: Only ask peers synced to a certain height.
-        // TODO: use privacy segement.
-        // Choose a different peer for each requested range.
-        let peers_with_blocks_inflight: Vec<_> = self
-            .blocks_inflight
-            .iter()
-            .map(|(peer_addr, _)| peer_addr)
-            .collect();
         let peers_with_no_blocks_inflight = self
             .peers
             .iter()
             .filter(|(addr, peer)| {
-                peer.segment.is_some() && !peers_with_blocks_inflight.iter().any(|x| x == addr)
+                peer.segment.is_some() && !self.blocks_inflight.contains_key(addr)
             })
             .map(|(addr, peer)| vec![(addr, peer)])
             .clone();
-        // log::debug!(
-        //     "peers_with_blocks_inflight {:?}",
-        //     peers_with_blocks_inflight
-        // );
-        // log::debug!(
-        //     "peers_with_no_blocks_inflight {:?}",
-        //     peers_with_no_blocks_inflight
-        // );
-        for (range, peer) in self
+        let mut peer_no_blocks: Vec<(&SocketAddr, &Peer)> = vec![];
+        for peer in self.peers.iter() {
+            if peer.1.segment.is_some() && !self.blocks_inflight.contains_key(&peer.0) {
+                peer_no_blocks.push((peer.0, peer.1));
+            }
+        }
+
+        for (req_range, peer) in self
             .rescan
             .requests(range, tree)
             .into_iter()
-            .zip(peers_with_no_blocks_inflight.cycle())
+            .zip(peer_no_blocks)
         {
-            // let stop_hash = tree
-            //     .get_block_by_height(*range.end())
-            //     .ok_or(GetMerkleBlocksError::InvalidRange)?
-            //     .block_hash();
-            let timeout = self.request_timeout;
-
             log::debug!(
                 target: "p2p",
                 "Requested merkle blocks(s) in range {} to {} from peer {}",
-                range.start(),
-                range.end(),
-                peer[0].0,
+                req_range.start(),
+                req_range.end(),
+                peer.0,
             );
 
             let locators: Vec<BlockHash> = tree
-                .range(*range.start()..*range.end() + 1)
-                .map(|(_height, blockhash)| blockhash)
+                .range(*req_range.start()..*req_range.end() + 1)
+                .flat_map(|(_height, blockhash)| vec![blockhash])
                 .collect();
-            let mut bock_request: Vec<Inventory> = Vec::new();
-            locators.iter().for_each(|block| {
-                bock_request.push(Inventory::FilteredBlock(*block));
-            });
+
+            let bock_request: Vec<Inventory> = locators
+                .iter()
+                .map(|block| Inventory::FilteredBlock(*block))
+                .collect();
             let sent_at = self.clock.local_time();
             let req = GetBlocks {
-                locators: (locators.clone(), BlockHash::all_zeros()),
-                sent_at,
+                locators: (
+                    tree.range(*req_range.start()..*req_range.end() + 1)
+                        .flat_map(|(_height, blockhash)| vec![blockhash])
+                        .collect(),
+                    BlockHash::all_zeros(),
+                ),
+                sent_at: self.clock.local_time(),
                 on_timeout: OnTimeout::Ignore,
             };
-            self.outbox.get_data(*peer[0].0, bock_request);
-            self.outbox.set_timer(timeout);
-            self.blocks_inflight.to_owned().insert(*peer[0].0, req);
-            self.rescan.reset();
+            // self.outbox.get_data(*peer[0].0, bock_request);
+            // self.outbox.set_timer(timeout);
+            // self.blocks_inflight.to_owned().insert(*peer[0].0, req);
+            // self.rescan.reset();
         }
         Ok(())
     }
@@ -457,7 +472,8 @@ impl<C: Clock> BloomManager<C> {
         end: Bound<Height>,
         // watch: Vec<Script>,
         tree: &T,
-    ) -> Vec<(Height, BlockHash)> {
+    ) /*-> Vec<(Height, BlockHash)>*/
+    {
         self.rescan.restart(
             match start {
                 Bound::Unbounded => tree.height() + 1,
@@ -477,22 +493,18 @@ impl<C: Clock> BloomManager<C> {
             stop: self.rescan.end,
         });
 
-        // if self.rescan.watch.is_empty() {
-        //     return vec![];
-        // }
-
         let height = tree.height();
         let start = self.rescan.start;
         let stop = self
             .rescan
             .end
-            // Don't request further than the filter chain height.
+            // Don't request further than the chain height.
             .map(|h| Height::min(h, height))
             .unwrap_or(height);
         let range = start..=stop;
-        if range.is_empty() {
-            return vec![];
-        }
+        // if range.is_empty() {
+        //     return vec![];
+        // }
         // Start fetching the filters we can.
         match self.get_merkle_blocks(range.clone(), tree) {
             Ok(()) => {}
@@ -501,12 +513,9 @@ impl<C: Clock> BloomManager<C> {
         }
         // When we reset the rescan range, there is the possibility of getting immediate cache
         // hits from `get_cfilters`. Hence, process the filter queue.
-        let (matches, _events, _) = self.rescan.process();
-        // for _event in events {
-        // self.outbox.event(event);
-        // }
+        // let (matches, _events, _) = self.rescan.process();
 
-        matches
+        // matches
     }
 }
 
