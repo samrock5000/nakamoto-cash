@@ -45,6 +45,8 @@ pub enum Event {
         addr: PeerId,
         /// the bloom filter sent from client
         filter: FilterLoad,
+        /// send to connected peers
+        all: bool,
     },
 
     /// Peer connected. This is fired when the physical TCP/IP connection
@@ -325,10 +327,14 @@ impl fmt::Display for Event {
             Self::MerkleBlockRescanStopped { height } => {
                 write!(fmt, "A merkle block resan stopped {height}")
             }
-            Self::LoadBloomFilter { addr, filter } => {
+            Self::LoadBloomFilter { addr, filter, all } => {
                 _ = filter;
                 _ = addr;
-                write!(fmt, "A bloom filter load request from client")
+                write!(
+                    fmt,
+                    "A bloom filter load request from client, all peers {}",
+                    all
+                )
             }
             Self::Ready { .. } => {
                 write!(fmt, "Ready to process events and commands")

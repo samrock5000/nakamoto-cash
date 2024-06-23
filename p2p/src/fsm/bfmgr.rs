@@ -40,8 +40,8 @@ pub const DEFAULT_FILTER_CACHE_SIZE: usize = 1024 * 1024 * 4; // 1 MB.
 
 /// State of a bloom filter peer.
 #[derive(Debug, Clone)]
-struct Peer {
-    segment: Option<PrivacySegment>,
+pub struct Peer {
+    has_filter: bool,
     // last_active: Option<LocalTime>,
     // last_asked: Option<Locators>,
     // height: Height,
@@ -175,52 +175,6 @@ impl<C: Clock> BloomManager<C> {
                 ..
             } => {
                 self.peer_negotiated(addr, height, services, link, tree);
-                // if let Some(ps) = self.bloom_segments.get_mut(&0) {
-                //     let filter = ps.filter.clone();
-                //     let bloom_filter = FilterLoad {
-                //         filter: filter.content,
-                //         hash_funcs: filter.hashes,
-                //         tweak: filter.tweak,
-                //         flags: match filter.flags {
-                //             0 => BloomFlags::None,
-                //             1 => BloomFlags::All,
-                //             2 => BloomFlags::PubkeyOnly,
-                //             _ => BloomFlags::None,
-                //         },
-                //     };
-                //     self.send_bloom_filter(addr, bloom_filter)
-                // }
-                // self.rescan(
-                //     Bound::Included(0),
-                //     Bound::Included(100),
-                //     vec![Script::new()],
-                //     tree,
-                // );
-                // self.rescan.info();
-                let mut filter =
-                    BloomFilter::new(10000, 0.001, fastrand::u32(0..u32::max_value()), 0);
-                let mut x =
-                    cash_addr::decode("bitcoincash:qp2hq3u9qkstal3r8d5fmccj5sqmrr6mlcn6e949cx")
-                        .unwrap()
-                        .0;
-                filter.insert(&mut x);
-                let bloom_filter = FilterLoad {
-                    filter: filter.content,
-                    hash_funcs: filter.hashes,
-                    tweak: filter.tweak,
-                    flags: match filter.flags {
-                        0 => BloomFlags::None,
-                        1 => BloomFlags::All,
-                        2 => BloomFlags::PubkeyOnly,
-                        _ => BloomFlags::None,
-                    },
-                };
-
-                //
-                //
-                //
-                //
-                _ = self.send_bloom_filter(bloom_filter);
             }
             Event::MerkleBlockProcessed {
                 merkle_block,
@@ -229,22 +183,18 @@ impl<C: Clock> BloomManager<C> {
                 // matched,
                 // cached,
                 ..
-            } => {
-                log::debug!(
-                    "BFMG MERKLE PROCESSED {:#?} from {height} ",
-                    merkle_block.header.block_hash()
-                );
-            }
+            } => {}
             Event::PeerDisconnected { addr, .. } => {
                 self.unregister(&addr);
             }
+
             Event::PeerLoadedBloomFilter { .. } => {
                 // self.send_bloom_filter(filter);
             }
-            Event::LoadBloomFilter { addr, filter } => {
-                _ = addr;
-                self.send_bloom_filter(filter);
-            }
+            Event::LoadBloomFilter { addr, filter, all } => match all {
+                true => self.send_bloom_filter_all_connected(filter),
+                _ => self.outbox.send_bloom_filter_load(&addr, filter),
+            },
             Event::BlockHeadersSynced { .. } => {}
             // Event::ReceivedMerkleBlock { height, .. } => {}
             Event::MessageReceived { from, message } => match message.as_ref() {
@@ -294,45 +244,36 @@ impl<C: Clock> BloomManager<C> {
         if link.is_outbound() && !services.has(REQUIRED_SERVICES) {
             return;
         }
-        let seg = self.bloom_segments.get_mut(&0).unwrap().clone();
-        // if let Some(segment) = self.bloom_segments.get_mut(&0) {
-        self.register(addr, Some(seg));
-        // }
+        self.register(addr);
     }
 
     /// Register a new peer.
     fn register(
         &mut self,
         addr: PeerId,
-        segment: Option<PrivacySegment>,
         // height: Height,
         // preferred: bool,
         // link: Link,
     ) {
-        // let last_active = None;
-        // let last_asked = None;
-
-        // let tip = BlockHash::all_zeros();
-        self.peers.insert(
-            addr,
-            Peer {
-                segment,
-                // last_active,
-                // last_asked,
-                // height,
-                // preferred,
-                // tip,
-                // link,
-            },
-        );
+        self.peers.insert(addr, Peer { has_filter: false });
     }
-
-    pub fn send_bloom_filter(&mut self, filter: FilterLoad) {
-        //TODO filter out segment to peers
-        if let Some((peer_addr, _)) = self.peers.sample() {
-            self.outbox
-                .send_bloom_filter_load(&peer_addr, filter.clone());
+    /// send a bloom filter to all connected peers
+    pub fn send_bloom_filter_all_connected(&mut self, filter: FilterLoad) {
+        for peer in self.peers.iter() {
+            self.outbox.send_bloom_filter_load(peer.0, filter.clone())
         }
+    }
+    /// get bloom filter unset connected peers
+    pub fn get_peers_not_filter_loaded(&mut self) -> Vec<SocketAddr> {
+        let mut peers_set: Vec<SocketAddr> = Vec::new();
+
+        for peer in self.peers.iter() {
+            if !peer.1.has_filter {
+                let peer = *peer.0;
+                peers_set.push(peer);
+            }
+        }
+        peers_set
     }
     /// A tick was received.
     pub fn timer_expired<T: BlockReader>(&mut self, _tree: &T) {
@@ -376,9 +317,9 @@ impl<C: Clock> BloomManager<C> {
         }
     }
     pub fn get_mempool(&mut self) {
-        let peer = self.peers.clone().into_keys();
-
-        self.outbox.get_mempool(&peer.enumerate().next().unwrap().1)
+        if let Some(x) = self.peers.sample() {
+            self.outbox.get_mempool(&x.0);
+        }
     }
 
     pub fn get_merkle_blocks<T: BlockReader>(
@@ -392,65 +333,62 @@ impl<C: Clock> BloomManager<C> {
         if range.is_empty() {
             return Err(GetMerkleBlocksError::InvalidRange);
         }
+        // Don't request more than once from the same peer.
         assert!(*range.end() <= tree.height());
 
+        // TODO: Only ask peers synced to a certain height.
+        // TODO: use privacy segement.
+        // Choose a different peer for each requested range.
+        let peers_with_blocks_inflight: Vec<_> = self
+            .blocks_inflight
+            .iter()
+            .map(|(peer_addr, _)| peer_addr)
+            .collect();
         let peers_with_no_blocks_inflight = self
             .peers
             .iter()
-            .filter(|(addr, peer)| {
-                peer.segment.is_some() && !self.blocks_inflight.contains_key(addr)
-            })
+            .filter(|(addr, _)| !peers_with_blocks_inflight.iter().any(|x| x == addr))
             .map(|(addr, peer)| vec![(addr, peer)])
             .clone();
-        let mut peer_no_blocks: Vec<(&SocketAddr, &Peer)> = vec![];
-        for peer in self.peers.iter() {
-            if peer.1.segment.is_some() && !self.blocks_inflight.contains_key(&peer.0) {
-                peer_no_blocks.push((peer.0, peer.1));
-            }
-        }
 
-        for (req_range, peer) in self
+        for (range, peer) in self
             .rescan
             .requests(range, tree)
             .into_iter()
-            .zip(peer_no_blocks)
+            .zip(peers_with_no_blocks_inflight.cycle())
         {
+            let timeout = self.request_timeout;
+
             log::debug!(
                 target: "p2p",
                 "Requested merkle blocks(s) in range {} to {} from peer {}",
-                req_range.start(),
-                req_range.end(),
-                peer.0,
+                range.start(),
+                range.end(),
+                peer[0].0,
             );
 
             let locators: Vec<BlockHash> = tree
-                .range(*req_range.start()..*req_range.end() + 1)
-                .flat_map(|(_height, blockhash)| vec![blockhash])
+                .range(*range.start()..*range.end() + 1)
+                .map(|(_height, blockhash)| blockhash)
                 .collect();
-
-            let bock_request: Vec<Inventory> = locators
-                .iter()
-                .map(|block| Inventory::FilteredBlock(*block))
-                .collect();
+            let mut bock_request: Vec<Inventory> = Vec::new();
+            locators.iter().for_each(|block| {
+                bock_request.push(Inventory::FilteredBlock(*block));
+            });
             let sent_at = self.clock.local_time();
             let req = GetBlocks {
-                locators: (
-                    tree.range(*req_range.start()..*req_range.end() + 1)
-                        .flat_map(|(_height, blockhash)| vec![blockhash])
-                        .collect(),
-                    BlockHash::all_zeros(),
-                ),
-                sent_at: self.clock.local_time(),
+                locators: (locators.clone(), BlockHash::all_zeros()),
+                sent_at,
                 on_timeout: OnTimeout::Ignore,
             };
-            // self.outbox.get_data(*peer[0].0, bock_request);
-            // self.outbox.set_timer(timeout);
-            // self.blocks_inflight.to_owned().insert(*peer[0].0, req);
-            // self.rescan.reset();
+            self.outbox.get_data(*peer[0].0, bock_request);
+            self.outbox.set_timer(timeout);
+            self.blocks_inflight.to_owned().insert(*peer[0].0, req);
+            self.rescan.reset();
         }
         Ok(())
     }
-    /// Called when we receive headers from a peer.
+    /// Called when we receive merkle blocks from a peer.
     pub fn received_merkle_blocks<T: BlockTree>(
         &mut self,
         height: &Height,

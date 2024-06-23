@@ -2,6 +2,7 @@
 //! interface.
 use nakamoto_common::bloom::store::cache::PrivacySegment;
 use nakamoto_common::collections::HashMap;
+use nakamoto_p2p::PeerId;
 use std::env;
 use std::fs;
 use std::io;
@@ -572,7 +573,18 @@ impl<W: Waker> Handle<W> {
 }
 
 impl<W: Waker> handle::Handle for Handle<W> {
-    fn load_bloom_filter(&self, filter: BloomFilter) -> Result<(), handle::Error> {
+    fn get_peers_not_filter_loaded(&self) -> Result<Vec<PeerId>, handle::Error> {
+        let (sender, recvr) = chan::bounded(1);
+        self._command(Command::GetPeersNotBloomFiltered(sender))?;
+
+        Ok(recvr.recv()?)
+    }
+    fn load_bloom_filter(
+        &self,
+        filter: BloomFilter,
+        peer: PeerId,
+        all: bool,
+    ) -> Result<(), handle::Error> {
         let bloom_filter = FilterLoad {
             filter: filter.content,
             hash_funcs: filter.hashes,
@@ -584,7 +596,7 @@ impl<W: Waker> handle::Handle for Handle<W> {
                 _ => BloomFlags::None,
             },
         };
-        self.command(Command::LoadBloomFilter(bloom_filter))
+        self.command(Command::LoadBloomFilter(bloom_filter, peer, all))
     }
     fn get_tip(&self) -> Result<(Height, BlockHeader, Uint256), handle::Error> {
         let (transmit, receive) = chan::bounded::<(Height, BlockHeader, Uint256)>(1);

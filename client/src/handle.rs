@@ -5,6 +5,7 @@ use std::ops::{RangeBounds, RangeInclusive};
 
 use crossbeam_channel as chan;
 use nakamoto_common::bitcoin::util::bloom::BloomFilter;
+use nakamoto_p2p::PeerId;
 use thiserror::Error;
 
 use nakamoto_common::bitcoin::network::constants::ServiceFlags;
@@ -174,5 +175,7 @@ pub trait Handle: Sized + Send + Sync + Clone {
     /// Shutdown the node process.
     fn shutdown(self) -> Result<(), Error>;
     /// load a peer with a bloom filter
-    fn load_bloom_filter(&self, filter: BloomFilter) -> Result<(), Error>;
+    fn load_bloom_filter(&self, filter: BloomFilter, peer: PeerId, all: bool) -> Result<(), Error>;
+    /// get peers not bloom filter loaded
+    fn get_peers_not_filter_loaded(&self) -> Result<Vec<PeerId>, Error>;
 }

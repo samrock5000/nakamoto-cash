@@ -158,7 +158,6 @@ impl Rescan {
         if range.is_empty() {
             return vec![];
         }
-
         for height in range.clone() {
             if let Some(merkle_block) = self.cache.get(&height) {
                 if let Some(header) = tree.get_block_by_height(height) {
@@ -195,13 +194,14 @@ impl Rescan {
             ranges.push(range);
         }
 
-        // Limit the requested ranges to `MAX_MESSAGE_CFILTERS`.
+        // Limit the requested ranges to `MAX_MESSAGE_INVS`.
         let ranges: Vec<RangeInclusive<Height>> = ranges
             .into_iter()
             .flat_map(|r| HeightIterator {
                 start: *r.start(),
                 stop: *r.end(),
-                step: MAX_MESSAGE_INVS as Height,
+                // step: MAX_MESSAGE_INVS as Height,
+                step: 25_000 as Height,
                 // step: 5 as Height,
             })
             .collect();
