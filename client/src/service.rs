@@ -49,7 +49,6 @@ impl<T: BlockTree, F: filter::Filters, P: peer::Store, C: AdjustedClock<net::Soc
                     hooks: config.hooks,
                     limits: config.limits,
                     services: config.services,
-                    bloom_segments: config.bloom_segments,
                     ..p2p::Config::default()
                 },
             ),

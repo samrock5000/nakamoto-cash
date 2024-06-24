@@ -1,7 +1,6 @@
 //! Bitcoin protocol state machine.
 #![warn(missing_docs)]
 use crossbeam_channel as chan;
-use fastrand::Rng;
 use log::*;
 
 pub mod bloom_cache;
@@ -27,8 +26,6 @@ use bfmgr::BloomManager;
 use cbfmgr::FilterManager;
 use invmgr::InventoryManager;
 use nakamoto_common::bitcoin::network::message_bloom::FilterLoad;
-use nakamoto_common::bloom::store::cache::PrivacySegment;
-use nakamoto_common::collections::HashMap;
 use output::Outbox;
 use peermgr::PeerManager;
 use pingmgr::PingManager;
@@ -274,6 +271,7 @@ pub enum Command {
     LoadBloomFilter(FilterLoad, PeerId, bool),
     /// Get mempool
     GetMempool,
+    /// get non bloom loaded peers
     GetPeersNotBloomFiltered(chan::Sender<Vec<PeerId>>),
 }
 
@@ -438,8 +436,6 @@ pub struct Config {
     pub hooks: Hooks,
     /// Configured limits.
     pub limits: Limits,
-    /// Bloom Filter
-    pub bloom_segments: HashMap<u32, PrivacySegment>,
 }
 
 impl Default for Config {
@@ -457,7 +453,6 @@ impl Default for Config {
             user_agent: USER_AGENT,
             hooks: Hooks::default(),
             limits: Limits::default(),
-            bloom_segments: HashMap::with_hasher(Rng::new().into()),
         }
     }
 }
@@ -519,7 +514,6 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
             params,
             hooks,
             limits,
-            bloom_segments,
         } = config;
 
         let outbox = Outbox::new(protocol_version);
@@ -572,7 +566,7 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
         );
         let invmgr = InventoryManager::new(rng.clone(), clock.clone());
 
-        let bfmgr = BloomManager::new(rng, clock.clone(), bloom_segments);
+        let bfmgr = BloomManager::new(rng, clock.clone());
 
         Self {
             tree,

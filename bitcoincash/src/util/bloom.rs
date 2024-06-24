@@ -99,7 +99,7 @@ impl BloomFilter {
         }
         for i in 0..self.hashes {
             let index = self.hash(i, data) as usize;
-            if (self.content[index >> 3] & (1 << (7 & index)) == 0) {
+            if self.content[index >> 3] & (1 << (7 & index)) == 0 {
                 return false;
             }
         }
@@ -143,14 +143,14 @@ pub fn get_size(elements: u32, false_positive_rate: f64) -> u32 {
     let m1 = MAX_FILTER_SIZE * 8;
     min_uint32(m0 as u32, m1 as u32) / 8
 }
-/// TODO
-pub fn optimal_size() -> BloomFilter {
-    !todo!()
-}
-/// TODO
-pub fn optimal_hash_amount() -> BloomFilter {
-    !todo!()
-}
+// /// TODO
+// pub fn optimal_size() -> BloomFilter {
+//     !todo!()
+// }
+// /// TODO
+// pub fn optimal_hash_amount() -> BloomFilter {
+//     !todo!()
+// }
 
 mod test {
 

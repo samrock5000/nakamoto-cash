@@ -2,8 +2,7 @@
 #![allow(clippy::type_complexity)]
 #![deny(missing_docs, unsafe_code)]
 pub mod block;
-/// does stuff
-pub mod bloom;
+// pub mod bloom;
 pub mod collections;
 pub mod network;
 pub mod p2p;

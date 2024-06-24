@@ -2,16 +2,10 @@
 //! Manages header synchronization with peers.
 //!
 
-use std::ops::RangeInclusive;
-
 use nakamoto_common::bitcoin::consensus::params::Params;
 use nakamoto_common::bitcoin::network::constants::ServiceFlags;
 use nakamoto_common::bitcoin::network::message::NetworkMessage;
 use nakamoto_common::bitcoin::network::message_blockdata::{GetHeadersMessage, Inventory};
-use nakamoto_common::bitcoin::network::message_bloom::{BloomFlags, FilterLoad};
-use nakamoto_common::bitcoin::util::bloom::BloomFilter;
-use nakamoto_common::bitcoin::Block;
-use nakamoto_common::bitcoin_hashes::hex::FromHex;
 use nakamoto_common::bitcoin_hashes::Hash;
 use nakamoto_common::block::time::{Clock, LocalDuration, LocalTime};
 use nakamoto_common::block::tree::{BlockReader, BlockTree, Error, ImportResult};
@@ -32,8 +26,8 @@ pub const TIP_STALE_DURATION: LocalDuration = LocalDuration::from_mins(60 * 2);
 pub const MAX_MESSAGE_HEADERS: usize = 2000;
 /// Maximum number of inventories sent in an `inv` message.
 pub const MAX_MESSAGE_INVS: usize = 50000;
-/// Number of blocks that can be requested at any given time from a single peer
-pub const MAX_BLOCKS_IN_TRANSIT_PER_PEER: usize = 16;
+// Number of blocks that can be requested at any given time from a single peer
+// pub const MAX_BLOCKS_IN_TRANSIT_PER_PEER: usize = 16;
 /// Idle timeout.
 pub const IDLE_TIMEOUT: LocalDuration = LocalDuration::BLOCK_INTERVAL;
 /// Services required from peers for header sync.
@@ -716,42 +710,5 @@ impl<C: Clock> SyncManager<C> {
                 OnTimeout::Ignore,
             );
         }
-    }
-
-    fn send_bloom_filter(&mut self) {
-        for (addr, peer) in &*self.peers {
-            let mut script_hash =
-                // Vec::from_hex("347eeb9896b64a484d1019a16075c194a17e6081").unwrap();
-                // Vec::from_hex("64462479fb3bf5b307ab42123dea68d9ec6db353").unwrap();
-            // Vec::from_hex("7dcc5bd98ad7f437957c28d4d0312d91818d1d236531b5ae78e59e10b9610155").unwrap();
-            Vec::from_hex("84487d5b5448dcb272921965eebb266728b25853").unwrap();
-
-            let mut bloom_filter = BloomFilter::new(1000, 0.0001, 987987, 0);
-            bloom_filter.insert(&mut script_hash);
-            let data = bloom_filter.content;
-
-            let f = FilterLoad {
-                filter: data,
-                hash_funcs: bloom_filter.hashes,
-                tweak: bloom_filter.tweak,
-                flags: match bloom_filter.flags {
-                    0 => BloomFlags::None,
-                    1 => BloomFlags::All,
-                    2 => BloomFlags::PubkeyOnly,
-                    _ => BloomFlags::None,
-                },
-            };
-            self.outbox.send_bloom_filter_load(addr, f)
-        }
-    }
-
-    pub fn received_block<T: BlockTree>(
-        &mut self,
-        from: &PeerId,
-        block: Block,
-        tree: &mut T,
-        msg: &NetworkMessage,
-    ) {
-        log::debug!(target: "p2p", "Received {:#?} data: {} from {} height {}", msg, block.block_hash(), from,tree.height());
     }
 }

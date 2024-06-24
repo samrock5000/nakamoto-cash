@@ -1,6 +1,5 @@
 //! Core nakamoto client functionality. Wraps all the other modules under a unified
 //! interface.
-use nakamoto_common::bloom::store::cache::PrivacySegment;
 use nakamoto_common::collections::HashMap;
 use nakamoto_p2p::PeerId;
 use std::env;
@@ -78,8 +77,6 @@ pub struct Config {
     pub services: ServiceFlags,
     /// Configured limits.
     pub limits: Limits,
-    /// Bloom Filters
-    pub bloom_segments: HashMap<u32, PrivacySegment>,
 }
 
 /// Configuration for loading event handling.
@@ -136,7 +133,6 @@ impl Default for Config {
             hooks: Hooks::default(),
             limits: Limits::default(),
             services: ServiceFlags::NONE,
-            bloom_segments: HashMap::with_hasher(fastrand::Rng::new().into()),
         }
     }
 }

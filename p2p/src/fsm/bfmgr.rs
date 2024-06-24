@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::ops::{Bound, RangeInclusive};
 
-use nakamoto_common::bitcoin::util::bloom::BloomFilter;
+// use nakamoto_common::bitcoin::util::bloom::BloomFilter;
 use nakamoto_common::bitcoin_hashes::Hash;
 use thiserror::Error;
 
@@ -19,12 +19,11 @@ use super::{DisconnectReason, Link, Locators, PeerId};
 use nakamoto_common::bitcoin::network::constants::ServiceFlags;
 use nakamoto_common::bitcoin::network::message::NetworkMessage;
 use nakamoto_common::bitcoin::network::message_blockdata::Inventory;
-use nakamoto_common::bitcoin::network::message_bloom::{BloomFlags, FilterLoad};
-use nakamoto_common::bitcoin::{cash_addr, MerkleBlock, Txid};
+use nakamoto_common::bitcoin::network::message_bloom::FilterLoad;
+use nakamoto_common::bitcoin::Txid;
 use nakamoto_common::block::time::{Clock, LocalDuration, LocalTime};
 use nakamoto_common::block::tree::{BlockReader, BlockTree};
 use nakamoto_common::block::{BlockHash, Height};
-use nakamoto_common::bloom::store::cache::PrivacySegment;
 use nakamoto_common::collections::{AddressBook, HashMap};
 use nakamoto_common::source;
 use rescan::Rescan;
@@ -83,33 +82,13 @@ pub enum GetMerkleBlocksError {
     // #[error("peer already sent blocks")]
     // AlreadyAsked,
 }
-// /// An error originating in the Bloom filter manager.
-// #[derive(Error, Debug)]
-// pub enum Error {
-//     /// The request was ignored. This happens if we're not able to fulfill the request.
-//     #[error("ignoring message from {from}: {reason}")]
-//     Ignored {
-//         /// Reason.
-//         reason: &'static str,
-//         /// Message sender.
-//         from: PeerId,
-//     },
-//     /// Error due to an invalid peer message.
-//     #[error("invalid message received from {from}: {reason}")]
-//     InvalidMessage {
-//         /// Message sender.
-//         from: PeerId,
-//         /// Reason why the message is invalid.
-//         reason: &'static str,
-//     },
-// }
+
 /// A bloom filter manager.
 #[derive(Debug)]
 pub struct BloomManager<C> {
     /// Rescan state.
     pub rescan: Rescan,
-    /// bloom filter segments
-    pub bloom_segments: HashMap<u32, PrivacySegment>,
+
     clock: C,
     /// Sync-specific peer state.
     peers: AddressBook<PeerId, Peer>,
@@ -134,13 +113,12 @@ impl<C> Iterator for BloomManager<C> {
 }
 
 impl<C: Clock> BloomManager<C> {
-    pub fn new(rng: fastrand::Rng, clock: C, bloom_segments: HashMap<u32, PrivacySegment>) -> Self {
+    pub fn new(rng: fastrand::Rng, clock: C) -> Self {
         let peers = AddressBook::new(rng.clone());
         let rescan = Rescan::new(DEFAULT_FILTER_CACHE_SIZE);
         let blocks_inflight = HashMap::with_hasher(rng.into());
         let matches: VecDeque<Txid> = VecDeque::new();
         Self {
-            bloom_segments,
             rescan,
             clock,
             peers,
@@ -177,8 +155,8 @@ impl<C: Clock> BloomManager<C> {
                 self.peer_negotiated(addr, height, services, link, tree);
             }
             Event::MerkleBlockProcessed {
-                merkle_block,
-                height,
+                // merkle_block,
+                // height,
                 // matches,
                 // matched,
                 // cached,
@@ -388,20 +366,20 @@ impl<C: Clock> BloomManager<C> {
         }
         Ok(())
     }
-    /// Called when we receive merkle blocks from a peer.
-    pub fn received_merkle_blocks<T: BlockTree>(
-        &mut self,
-        height: &Height,
-        merkle_block: MerkleBlock,
-        tree: &mut T,
-    ) {
-        _ = tree;
-        self.rescan.received(
-            *height,
-            merkle_block.clone(),
-            merkle_block.header.block_hash(),
-        );
-    }
+    // /// Called when we receive merkle blocks from a peer.
+    // pub fn received_merkle_blocks<T: BlockTree>(
+    //     &mut self,
+    //     height: &Height,
+    //     merkle_block: MerkleBlock,
+    //     tree: &mut T,
+    // ) {
+    //     _ = tree;
+    //     self.rescan.received(
+    //         *height,
+    //         merkle_block.clone(),
+    //         merkle_block.header.block_hash(),
+    //     );
+    // }
 
     /// Rescan merkle blocks.
     pub fn merkle_scan<T: BlockReader>(
