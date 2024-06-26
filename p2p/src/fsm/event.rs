@@ -41,8 +41,8 @@ pub enum Event {
     },
     /// A BloomFilter was received from client
     LoadBloomFilter {
-        /// the peer address
-        addr: PeerId,
+        /// the peers
+        peers: Vec<PeerId>,
         /// the bloom filter sent from client
         filter: FilterLoad,
         /// send to connected peers
@@ -327,9 +327,9 @@ impl fmt::Display for Event {
             Self::MerkleBlockRescanStopped { height } => {
                 write!(fmt, "A merkle block resan stopped {height}")
             }
-            Self::LoadBloomFilter { addr, filter, all } => {
+            Self::LoadBloomFilter { peers, filter, all } => {
                 _ = filter;
-                _ = addr;
+                _ = peers;
                 write!(
                     fmt,
                     "A bloom filter load request from client, all peers {}",

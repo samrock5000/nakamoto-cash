@@ -578,7 +578,7 @@ impl<W: Waker> handle::Handle for Handle<W> {
     fn load_bloom_filter(
         &self,
         filter: BloomFilter,
-        peer: PeerId,
+        peer: Vec<PeerId>,
         all: bool,
     ) -> Result<(), handle::Error> {
         let bloom_filter = FilterLoad {

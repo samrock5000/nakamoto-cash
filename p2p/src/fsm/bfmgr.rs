@@ -169,9 +169,10 @@ impl<C: Clock> BloomManager<C> {
             Event::PeerLoadedBloomFilter { .. } => {
                 // self.send_bloom_filter(filter);
             }
-            Event::LoadBloomFilter { addr, filter, all } => match all {
-                true => self.send_bloom_filter_all_connected(filter),
-                _ => self.outbox.send_bloom_filter_load(&addr, filter),
+            Event::LoadBloomFilter { peers, filter, all } => match all {
+
+                true => self.send_bloom_filter_all_connected(filter,peers),
+                _ => self.outbox.send_bloom_filter_load(&peers[0], filter),
             },
             Event::BlockHeadersSynced { .. } => {}
             // Event::ReceivedMerkleBlock { height, .. } => {}
@@ -236,9 +237,9 @@ impl<C: Clock> BloomManager<C> {
         self.peers.insert(addr, Peer { has_filter: false });
     }
     /// send a bloom filter to all connected peers
-    pub fn send_bloom_filter_all_connected(&mut self, filter: FilterLoad) {
-        for peer in self.peers.iter() {
-            self.outbox.send_bloom_filter_load(peer.0, filter.clone())
+    pub fn send_bloom_filter_all_connected(&mut self, filter: FilterLoad, peers: Vec<PeerId>) {
+        for peer in peers.iter() {
+            self.outbox.send_bloom_filter_load(peer, filter.clone())
         }
     }
     /// get bloom filter unset connected peers

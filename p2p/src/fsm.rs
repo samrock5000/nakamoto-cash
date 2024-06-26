@@ -268,7 +268,7 @@ pub enum Command {
     /// Get a previously submitted transaction.
     GetSubmittedTransaction(Txid, chan::Sender<Option<Transaction>>),
     /// Load Bloom filters to the .
-    LoadBloomFilter(FilterLoad, PeerId, bool),
+    LoadBloomFilter(FilterLoad, Vec<PeerId>, bool),
     /// Get mempool
     GetMempool,
     /// get non bloom loaded peers
@@ -772,9 +772,9 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
                 let tx = self.invmgr.get_submitted_tx(txid);
                 reply.send(tx).ok();
             }
-            Command::LoadBloomFilter(filter, addr, all) => match all {
-                true => self.bfmgr.send_bloom_filter_all_connected(filter),
-                _ => self.outbox.send_bloom_filter_load(&addr, filter),
+            Command::LoadBloomFilter(filter, peers, all) => match all {
+                true => self.bfmgr.send_bloom_filter_all_connected(filter, peers),
+                _ => self.outbox.send_bloom_filter_load(&peers[0], filter),
             },
             Command::GetMempool => self.bfmgr.get_mempool(),
             Command::GetPeersNotBloomFiltered(reply) => {

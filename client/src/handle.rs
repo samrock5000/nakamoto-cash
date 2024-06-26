@@ -175,7 +175,12 @@ pub trait Handle: Sized + Send + Sync + Clone {
     /// Shutdown the node process.
     fn shutdown(self) -> Result<(), Error>;
     /// load a peer with a bloom filter
-    fn load_bloom_filter(&self, filter: BloomFilter, peer: PeerId, all: bool) -> Result<(), Error>;
+    fn load_bloom_filter(
+        &self,
+        filter: BloomFilter,
+        peer: Vec<PeerId>,
+        all: bool,
+    ) -> Result<(), Error>;
     /// get peers not bloom filter loaded
     fn get_peers_not_filter_loaded(&self) -> Result<Vec<PeerId>, Error>;
 }
