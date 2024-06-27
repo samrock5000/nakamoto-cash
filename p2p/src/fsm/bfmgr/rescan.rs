@@ -201,7 +201,6 @@ impl Rescan {
                 stop: *r.end(),
                 // step: MAX_MESSAGE_INVS as Height,
                 step: 25_000 as Height,
-                // step: 5 as Height,
             })
             .collect();
 

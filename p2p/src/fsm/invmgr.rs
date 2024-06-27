@@ -176,8 +176,8 @@ impl<C: Clock> InventoryManager<C> {
                 // NetworkMessage::Inv(inv) => {
                 // }
                 NetworkMessage::Block(block) => {
-                    self.received_block(&from, block.clone(), tree);
-                    // log::debug!(target: "p2p", "NetworkMessage::Block {:#?} from {}", message, from)
+                    self.received_block(&from, &block, tree);
+                    log::debug!(target: "p2p", "NetworkMessage::Block {:#?} from {}", block.block_hash(), from)
                 }
                 NetworkMessage::Tx(tx) => {
                     let txid = tx.txid();
@@ -360,7 +360,7 @@ impl<C: Clock> InventoryManager<C> {
     pub fn received_block<T: BlockReader>(
         &mut self,
         _from: &PeerId,
-        block: Block,
+        block: &Block,
         tree: &T,
     ) -> Vec<Txid> {
         let hash = block.block_hash();
@@ -387,7 +387,7 @@ impl<C: Clock> InventoryManager<C> {
         };
 
         // Add to processing queue. Blocks are processed in-order only.
-        self.received.insert(height, block);
+        self.received.insert(height, block.clone());
 
         // If there are still blocks remaining to download, don't process any of the
         // received queue yet.
@@ -654,7 +654,7 @@ mod tests {
                 // We're not done until we've requested all peers.
                 continue;
             }
-            invmgr.received_block(&addr, block.clone(), &tree);
+            invmgr.received_block(&addr, &block, &tree);
 
             break;
         }
@@ -784,7 +784,7 @@ mod tests {
         invmgr.peer_negotiated(remote, ServiceFlags::NETWORK, true);
         invmgr.announce(tx.clone());
         invmgr.get_block(main_block1.block_hash());
-        invmgr.received_block(&remote, main_block1, &tree);
+        invmgr.received_block(&remote, &main_block1, &tree);
 
         assert!(!invmgr.contains(&tx.txid()));
 
@@ -816,7 +816,7 @@ mod tests {
             .unwrap();
 
         invmgr.get_block(fork_block1.block_hash());
-        invmgr.received_block(&remote, fork_block1.clone(), &tree);
+        invmgr.received_block(&remote, &fork_block1, &tree);
 
         events(invmgr.outbox.drain())
             .find(|e| {

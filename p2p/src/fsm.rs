@@ -180,12 +180,32 @@ pub struct Peer {
     pub user_agent: String,
     /// Whether this peer relays transactions.
     pub relay: bool,
+    /// latency
+    pub latency: LocalDuration,
 }
 
 impl Peer {
     /// Check if this is an outbound peer.
     pub fn is_outbound(&self) -> bool {
         self.link.is_outbound()
+    }
+}
+
+impl From<(&peermgr::PeerInfo, &peermgr::Connection, &pingmgr::Peer)> for Peer {
+    fn from(
+        (peer, conn, ping): (&peermgr::PeerInfo, &peermgr::Connection, &pingmgr::Peer),
+    ) -> Self {
+        Self {
+            addr: conn.addr,
+            local_addr: conn.local_addr,
+            link: conn.link,
+            since: conn.since,
+            height: peer.height,
+            services: peer.services,
+            user_agent: peer.user_agent.clone(),
+            relay: peer.relay,
+            latency: ping.latency(),
+        }
     }
 }
 
@@ -200,6 +220,7 @@ impl From<(&peermgr::PeerInfo, &peermgr::Connection)> for Peer {
             services: peer.services,
             user_agent: peer.user_agent.clone(),
             relay: peer.relay,
+            latency: LocalDuration::from_secs(0),
         }
     }
 }
@@ -683,13 +704,29 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
                 reply.send(header).ok();
             }
             Command::GetPeers(services, reply) => {
-                let peers = self
-                    .peermgr
+                let latencies = self
+                    .pingmgr
+                    .peers
+                    .iter()
+                    .map(|p| (p.0, p.1.latency()))
+                    .collect::<Vec<_>>();
+                let mut peers: Vec<Peer> = Vec::new();
+                self.peermgr
                     .peers()
                     .filter(|(p, _)| p.is_negotiated())
                     .filter(|(p, _)| p.services.has(services))
                     .map(Peer::from)
-                    .collect::<Vec<Peer>>();
+                    .collect::<Vec<Peer>>()
+                    .iter()
+                    .for_each(|peer| {
+                        if let Some((_socket, latency)) =
+                            latencies.iter().find(|l| *l.0 == peer.addr)
+                        {
+                            let mut p = peer.clone();
+                            p.latency = *latency;
+                            peers.push(p.clone());
+                        }
+                    });
 
                 reply.send(peers).ok();
             }

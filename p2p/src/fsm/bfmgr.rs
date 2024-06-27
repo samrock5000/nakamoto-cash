@@ -7,7 +7,6 @@ use std::net::SocketAddr;
 use std::ops::{Bound, RangeInclusive};
 
 // use nakamoto_common::bitcoin::util::bloom::BloomFilter;
-use nakamoto_common::bitcoin_hashes::Hash;
 use thiserror::Error;
 
 mod rescan;
@@ -305,6 +304,7 @@ impl<C: Clock> BloomManager<C> {
         &mut self,
         range: RangeInclusive<Height>,
         tree: &T,
+        peers: Vec<PeerId>,
     ) -> Result<(), GetMerkleBlocksError> {
         if self.peers.is_empty() {
             return Err(GetMerkleBlocksError::NotConnected);
@@ -315,26 +315,11 @@ impl<C: Clock> BloomManager<C> {
         // Don't request more than once from the same peer.
         assert!(*range.end() <= tree.height());
 
-        // TODO: Only ask peers synced to a certain height.
-        // TODO: use privacy segement.
-        // Choose a different peer for each requested range.
-        let peers_with_blocks_inflight: Vec<_> = self
-            .blocks_inflight
-            .iter()
-            .map(|(peer_addr, _)| peer_addr)
-            .collect();
-        let peers_with_no_blocks_inflight = self
-            .peers
-            .iter()
-            .filter(|(addr, _)| !peers_with_blocks_inflight.iter().any(|x| x == addr))
-            .map(|(addr, peer)| vec![(addr, peer)])
-            .clone();
-
         for (range, peer) in self
             .rescan
             .requests(range, tree)
             .into_iter()
-            .zip(peers_with_no_blocks_inflight.cycle())
+            .zip(peers.iter().cycle())
         {
             let timeout = self.request_timeout;
 
@@ -343,7 +328,7 @@ impl<C: Clock> BloomManager<C> {
                 "Requested merkle blocks(s) in range {} to {} from peer {}",
                 range.start(),
                 range.end(),
-                peer[0].0,
+                peer,
             );
 
             let locators: Vec<BlockHash> = tree
@@ -354,34 +339,18 @@ impl<C: Clock> BloomManager<C> {
             locators.iter().for_each(|block| {
                 bock_request.push(Inventory::FilteredBlock(*block));
             });
-            let sent_at = self.clock.local_time();
-            let req = GetBlocks {
-                locators: (locators.clone(), BlockHash::all_zeros()),
-                sent_at,
-                on_timeout: OnTimeout::Ignore,
-            };
-            self.outbox.get_data(*peer[0].0, bock_request);
+            // let sent_at = self.clock.local_time();
+            // let req = GetBlocks {
+            //     locators: (locators.clone(), BlockHash::all_zeros()),
+            //     sent_at,
+            //     on_timeout: OnTimeout::Ignore,
+            // };
+            self.outbox.get_data(*peer, bock_request);
             self.outbox.set_timer(timeout);
-            self.blocks_inflight.to_owned().insert(*peer[0].0, req);
             self.rescan.reset();
         }
         Ok(())
     }
-    // /// Called when we receive merkle blocks from a peer.
-    // pub fn received_merkle_blocks<T: BlockTree>(
-    //     &mut self,
-    //     height: &Height,
-    //     merkle_block: MerkleBlock,
-    //     tree: &mut T,
-    // ) {
-    //     _ = tree;
-    //     self.rescan.received(
-    //         *height,
-    //         merkle_block.clone(),
-    //         merkle_block.header.block_hash(),
-    //     );
-    // }
-
     /// Rescan merkle blocks.
     pub fn merkle_scan<T: BlockReader>(
         &mut self,
@@ -423,7 +392,8 @@ impl<C: Clock> BloomManager<C> {
         //     return vec![];
         // }
         // Start fetching the filters we can.
-        match self.get_merkle_blocks(range.clone(), tree) {
+        let peers = self.peers.iter().map(|p| *p.0).collect::<Vec<_>>();
+        match self.get_merkle_blocks(range.clone(), tree, peers) {
             Ok(()) => {}
             Err(GetMerkleBlocksError::NotConnected) => {}
             Err(err) => panic!("{}: Error fetching merkle blocks: {}", source!(), err),

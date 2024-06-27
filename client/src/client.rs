@@ -252,7 +252,7 @@ impl<R: Reactor> Client<R> {
             filters,
             subscriber,
             waker: reactor.waker(),
-            timeout: time::Duration::from_secs(60),
+            timeout: time::Duration::from_secs(60 * 3),
             shutdown,
             listening,
         };

@@ -21,7 +21,7 @@ use super::{
 /// Time interval to wait between sent pings.
 pub const PING_INTERVAL: LocalDuration = LocalDuration::from_mins(2);
 /// Time to wait to receive a pong when sending a ping.
-pub const PING_TIMEOUT: LocalDuration = LocalDuration::from_secs(30);
+pub const PING_TIMEOUT: LocalDuration = LocalDuration::from_secs(60 * 10);
 
 /// Maximum number of latencies recorded per peer.
 const MAX_RECORDED_LATENCIES: usize = 64;
@@ -33,7 +33,7 @@ enum State {
 }
 
 #[derive(Debug)]
-struct Peer {
+pub struct Peer {
     address: net::SocketAddr,
     state: State,
     /// Observed round-trip latencies for this peer.
@@ -43,7 +43,7 @@ struct Peer {
 impl Peer {
     /// Calculate the average latency of this peer.
     #[allow(dead_code)]
-    fn latency(&self) -> LocalDuration {
+    pub fn latency(&self) -> LocalDuration {
         let sum: LocalDuration = self.latencies.iter().sum();
 
         sum / self.latencies.len() as u32
@@ -58,7 +58,7 @@ impl Peer {
 /// Detects dead peer connections.
 #[derive(Debug)]
 pub struct PingManager<C> {
-    peers: HashMap<PeerId, Peer>,
+    pub peers: HashMap<PeerId, Peer>,
     ping_timeout: LocalDuration,
     /// Random number generator.
     rng: fastrand::Rng,
@@ -88,7 +88,6 @@ impl<C: Clock> PingManager<C> {
             clock,
         }
     }
-
     /// Event received.
     pub fn received_event<T>(&mut self, event: Event, _tree: &T) {
         match event {
