@@ -26,6 +26,7 @@ use bfmgr::BloomManager;
 use cbfmgr::FilterManager;
 use invmgr::InventoryManager;
 use nakamoto_common::bitcoin::network::message_bloom::FilterLoad;
+use nakamoto_common::bitcoin::util::bloom::BloomFilter;
 use output::Outbox;
 use peermgr::PeerManager;
 use pingmgr::PingManager;
@@ -289,7 +290,10 @@ pub enum Command {
     /// Get a previously submitted transaction.
     GetSubmittedTransaction(Txid, chan::Sender<Option<Transaction>>),
     /// Load Bloom filters to the .
-    LoadBloomFilter(FilterLoad, Vec<PeerId>, bool),
+    LoadBloomFilter(
+        (BloomFilter, Vec<PeerId>, bool),
+        chan::Sender<(BloomFilter, Vec<PeerId>, bool)>,
+    ),
     /// Get mempool
     GetMempool,
     /// get non bloom loaded peers
@@ -324,7 +328,7 @@ impl fmt::Debug for Command {
             Self::SubmitTransaction(tx, _) => write!(f, "SubmitTransaction({:?})", tx),
             Self::GetSubmittedTransaction(txid, _) => write!(f, "GetSubmittedTransaction({txid})"),
             Self::GetPeersNotBloomFiltered(_) => write!(f, "GetPeersNotBloomFilterd"),
-            Self::LoadBloomFilter(_filter, _, _) => {
+            Self::LoadBloomFilter(_, _) => {
                 write!(f, "LoadBloomFilter Request" /* filter */,)
             }
         }
@@ -809,10 +813,11 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
                 let tx = self.invmgr.get_submitted_tx(txid);
                 reply.send(tx).ok();
             }
-            Command::LoadBloomFilter(filter, peers, all) => match all {
-                true => self.bfmgr.send_bloom_filter_all_connected(filter, peers),
-                _ => self.outbox.send_bloom_filter_load(&peers[0], filter),
-            },
+            Command::LoadBloomFilter(bloom_data, reply) => {
+                // true => self.bfmgr.send_bloom_filter_all_connected(filter, peers),
+                // _ => self.bfmgr.send_bloom_filter_single_peer(filter, peers[0]),
+                reply.send(bloom_data).ok();
+            }
             Command::GetMempool => self.bfmgr.get_mempool(),
             Command::GetPeersNotBloomFiltered(reply) => {
                 let peers = self.bfmgr.by_ref().get_peers_not_filter_loaded();

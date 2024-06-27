@@ -6,6 +6,7 @@ use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::ops::{Bound, RangeInclusive};
 
+use nakamoto_common::bitcoin::util::bloom::BloomFilter;
 // use nakamoto_common::bitcoin::util::bloom::BloomFilter;
 use thiserror::Error;
 
@@ -18,7 +19,7 @@ use super::{DisconnectReason, Link, Locators, PeerId};
 use nakamoto_common::bitcoin::network::constants::ServiceFlags;
 use nakamoto_common::bitcoin::network::message::NetworkMessage;
 use nakamoto_common::bitcoin::network::message_blockdata::Inventory;
-use nakamoto_common::bitcoin::network::message_bloom::FilterLoad;
+use nakamoto_common::bitcoin::network::message_bloom::{BloomFlags, FilterLoad};
 use nakamoto_common::bitcoin::Txid;
 use nakamoto_common::block::time::{Clock, LocalDuration, LocalTime};
 use nakamoto_common::block::tree::{BlockReader, BlockTree};
@@ -165,13 +166,15 @@ impl<C: Clock> BloomManager<C> {
                 self.unregister(&addr);
             }
 
-            Event::PeerLoadedBloomFilter { .. } => {
-                // self.send_bloom_filter(filter);
-            }
-            Event::LoadBloomFilter { peers, filter, all } => match all {
-
-                true => self.send_bloom_filter_all_connected(filter,peers),
-                _ => self.outbox.send_bloom_filter_load(&peers[0], filter),
+            // Event::PeerLoadedBloomFilter { .. } => {
+            //     // self.send_bloom_filter(filter);
+            // }
+            Event::LoadBloomFilter { peers, .. } => {
+                println!("HELLO");
+                    peers.iter().for_each(|p| {
+                        self.peers.insert(*p, Peer { has_filter: true });
+                        log::debug!("BFMG LOADING PEER {:?} ",p);
+                    });
             },
             Event::BlockHeadersSynced { .. } => {}
             // Event::ReceivedMerkleBlock { height, .. } => {}
@@ -216,13 +219,13 @@ impl<C: Clock> BloomManager<C> {
         link: Link,
         tree: &T,
     ) {
-        _ = tree;
-        _ = height;
-        _ = addr;
-        if link.is_outbound() && !services.has(REQUIRED_SERVICES) {
-            return;
-        }
-        self.register(addr);
+        // _ = tree;
+        // _ = height;
+        // _ = addr;
+        // if link.is_outbound() && !services.has(REQUIRED_SERVICES) {
+        //     return;
+        // }
+        // self.register(addr);
     }
 
     /// Register a new peer.
@@ -236,11 +239,41 @@ impl<C: Clock> BloomManager<C> {
         self.peers.insert(addr, Peer { has_filter: false });
     }
     /// send a bloom filter to all connected peers
-    pub fn send_bloom_filter_all_connected(&mut self, filter: FilterLoad, peers: Vec<PeerId>) {
+    pub fn send_bloom_filter_all_connected(&mut self, filter: BloomFilter, peers: Vec<PeerId>) {
+        let bloom_filter = FilterLoad {
+            filter: filter.content,
+            hash_funcs: filter.hashes,
+            tweak: filter.tweak,
+            flags: match filter.flags {
+                0 => BloomFlags::None,
+                1 => BloomFlags::All,
+                2 => BloomFlags::PubkeyOnly,
+                _ => BloomFlags::None,
+            },
+        };
+
         for peer in peers.iter() {
-            self.outbox.send_bloom_filter_load(peer, filter.clone())
+            self.outbox
+                .send_bloom_filter_load(peer, bloom_filter.clone())
         }
     }
+
+    pub fn send_bloom_filter_single_peer(&mut self, filter: BloomFilter, peer: PeerId) {
+        let bloom_filter = FilterLoad {
+            filter: filter.content,
+            hash_funcs: filter.hashes,
+            tweak: filter.tweak,
+            flags: match filter.flags {
+                0 => BloomFlags::None,
+                1 => BloomFlags::All,
+                2 => BloomFlags::PubkeyOnly,
+                _ => BloomFlags::None,
+            },
+        };
+        self.outbox
+            .send_bloom_filter_load(&peer, bloom_filter.clone());
+    }
+
     /// get bloom filter unset connected peers
     pub fn get_peers_not_filter_loaded(&mut self) -> Vec<SocketAddr> {
         let mut peers_set: Vec<SocketAddr> = Vec::new();

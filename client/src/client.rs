@@ -23,8 +23,6 @@ use nakamoto_chain::{block::cache::BlockCache, filter::BlockFilter};
 
 use nakamoto_common::bitcoin::network::constants::ServiceFlags;
 use nakamoto_common::bitcoin::network::message::NetworkMessage;
-use nakamoto_common::bitcoin::network::message_bloom::BloomFlags;
-use nakamoto_common::bitcoin::network::message_bloom::FilterLoad;
 use nakamoto_common::bitcoin::network::Address;
 use nakamoto_common::bitcoin::util::uint::Uint256;
 use nakamoto_common::bitcoin::MerkleBlock;
@@ -252,7 +250,7 @@ impl<R: Reactor> Client<R> {
             filters,
             subscriber,
             waker: reactor.waker(),
-            timeout: time::Duration::from_secs(60 * 3),
+            timeout: time::Duration::from_secs(60),
             shutdown,
             listening,
         };
@@ -581,18 +579,10 @@ impl<W: Waker> handle::Handle for Handle<W> {
         peer: Vec<PeerId>,
         all: bool,
     ) -> Result<(), handle::Error> {
-        let bloom_filter = FilterLoad {
-            filter: filter.content,
-            hash_funcs: filter.hashes,
-            tweak: filter.tweak,
-            flags: match filter.flags {
-                0 => BloomFlags::None,
-                1 => BloomFlags::All,
-                2 => BloomFlags::PubkeyOnly,
-                _ => BloomFlags::None,
-            },
-        };
-        self.command(Command::LoadBloomFilter(bloom_filter, peer, all))
+        let (sender, receive) = chan::bounded(1);
+        _ = self._command(Command::LoadBloomFilter((filter, peer, all), sender));
+        // Ok(receive.recv()?)
+        Ok(())
     }
     fn get_tip(&self) -> Result<(Height, BlockHeader, Uint256), handle::Error> {
         let (transmit, receive) = chan::bounded::<(Height, BlockHeader, Uint256)>(1);
