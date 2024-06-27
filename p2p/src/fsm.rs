@@ -259,8 +259,8 @@ pub enum Command {
         from: Bound<Height>,
         /// Stop scanning at this height. If unbounded, don't stop scanning.
         to: Bound<Height>,
-        // /// Scripts to match on.
-        // watch: Vec<Script>,
+        /// peers to load bloom filter.
+        peers: Vec<PeerId>,
     },
     /// Update the watchlist with the provided scripts.
     Watch {
@@ -310,8 +310,8 @@ impl fmt::Debug for Command {
             Self::Rescan { from, to, watch } => {
                 write!(f, "Rescan({:?}, {:?}, {:?})", from, to, watch)
             }
-            Self::MerkleBlockRescan { from, to } => {
-                write!(f, "MerkleBlockRescan ({:?}, {:?},)", from, to,)
+            Self::MerkleBlockRescan { from, to, peers } => {
+                write!(f, "MerkleBlockRescan ({:?}, {:?}, {:?})", from, to, peers)
             }
             Self::Watch { watch } => {
                 write!(f, "Watch({:?})", watch)
@@ -800,8 +800,8 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
                     self.invmgr.get_block(hash);
                 }
             }
-            Command::MerkleBlockRescan { from, to } => {
-                self.bfmgr.merkle_scan(from, to, &self.tree);
+            Command::MerkleBlockRescan { from, to, peers } => {
+                self.bfmgr.merkle_scan(from, to, peers, &self.tree);
             }
             Command::Watch { watch } => {
                 self.cbfmgr.watch(watch);

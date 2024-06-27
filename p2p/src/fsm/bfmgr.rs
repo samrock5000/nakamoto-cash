@@ -156,6 +156,7 @@ impl<C: Clock> BloomManager<C> {
                         let event = Event::ReceivedMerkleBlock {
                             height,
                             merkle_block: block.clone(),
+                            peer: from,
                         };
                         self.outbox.event(event);
                     }
@@ -346,6 +347,7 @@ impl<C: Clock> BloomManager<C> {
         &mut self,
         start: Bound<Height>,
         end: Bound<Height>,
+        peers: Vec<PeerId>,
         tree: &T,
     ) {
         self.rescan.restart(
@@ -359,7 +361,6 @@ impl<C: Clock> BloomManager<C> {
                 Bound::Included(h) => Some(h),
                 Bound::Excluded(h) => Some(h - 1),
             },
-            // watch,
         );
 
         let height = tree.height();
@@ -372,8 +373,6 @@ impl<C: Clock> BloomManager<C> {
             .unwrap_or(height);
         let range = start..=stop;
 
-        // Start fetching the filters we can.
-        let peers = self.peers.iter().map(|p| *p.0).collect::<Vec<_>>();
         match self.get_merkle_blocks(range.clone(), tree, peers) {
             Ok(()) => {}
             Err(GetMerkleBlocksError::NotConnected) => {}

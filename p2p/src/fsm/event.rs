@@ -156,6 +156,8 @@ pub enum Event {
         height: Height,
         /// Matching block.
         merkle_block: MerkleBlock,
+        /// the peer who sent us the block
+        peer: PeerId,
     },
     /// Block header chain is in sync with network.
     BlockHeadersSynced {
@@ -321,9 +323,11 @@ impl fmt::Display for Event {
             Self::ReceivedMerkleBlock {
                 height,
                 merkle_block,
+                peer,
             } => {
-                let hash = merkle_block.header.block_hash();
-                write!(fmt, "MerkleBlock {hash} received at height {height}")
+                _ = merkle_block;
+                // let hash = merkle_block.header.block_hash();
+                write!(fmt, "MerkleBlock received at height {height} from {peer}")
             }
             Self::BlockFilterImported {
                 hash,
