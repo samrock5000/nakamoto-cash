@@ -20,7 +20,6 @@ use nakamoto_common::bitcoin::network::constants::ServiceFlags;
 use nakamoto_common::bitcoin::network::message::NetworkMessage;
 use nakamoto_common::bitcoin::network::message_blockdata::Inventory;
 use nakamoto_common::bitcoin::network::message_bloom::{BloomFlags, FilterLoad};
-use nakamoto_common::bitcoin::Txid;
 use nakamoto_common::block::time::{Clock, LocalDuration, LocalTime};
 use nakamoto_common::block::tree::{BlockReader, BlockTree};
 use nakamoto_common::block::{BlockHash, Height};
@@ -41,12 +40,6 @@ pub const DEFAULT_FILTER_CACHE_SIZE: usize = 1024 * 1024 * 4; // 1 MB.
 #[derive(Debug, Clone)]
 pub struct Peer {
     has_filter: bool,
-    // last_active: Option<LocalTime>,
-    // last_asked: Option<Locators>,
-    // height: Height,
-    // preferred: bool,
-    // tip: BlockHash,
-    // link: Link,
 }
 
 /// What to do if a timeout for a peer is received.
@@ -100,8 +93,6 @@ pub struct BloomManager<C> {
     blocks_inflight: HashMap<PeerId, GetBlocks>,
     /// How long to wait for a response from a peer.
     request_timeout: LocalDuration,
-    /// transactions matched
-    matches: VecDeque<Txid>,
 }
 
 impl<C> Iterator for BloomManager<C> {
@@ -117,7 +108,6 @@ impl<C: Clock> BloomManager<C> {
         let peers = AddressBook::new(rng.clone());
         let rescan = Rescan::new(DEFAULT_FILTER_CACHE_SIZE);
         let blocks_inflight = HashMap::with_hasher(rng.into());
-        let matches: VecDeque<Txid> = VecDeque::new();
         Self {
             rescan,
             clock,
@@ -126,7 +116,6 @@ impl<C: Clock> BloomManager<C> {
             outbox: Outbox::default(),
             blocks_inflight,
             request_timeout: REQUEST_TIMEOUT,
-            matches,
         }
     }
     pub fn idle<T: BlockReader>(&mut self, tree: &T) {
@@ -154,30 +143,12 @@ impl<C: Clock> BloomManager<C> {
             } => {
                 self.peer_negotiated(addr, height, services, link, tree);
             }
-            Event::MerkleBlockProcessed {
-                // merkle_block,
-                // height,
-                // matches,
-                // matched,
-                // cached,
-                ..
-            } => {}
             Event::PeerDisconnected { addr, .. } => {
                 self.unregister(&addr);
             }
 
-            // Event::PeerLoadedBloomFilter { .. } => {
-            //     // self.send_bloom_filter(filter);
-            // }
-            Event::LoadBloomFilter { peers, .. } => {
-                println!("HELLO");
-                    peers.iter().for_each(|p| {
-                        self.peers.insert(*p, Peer { has_filter: true });
-                        log::debug!("BFMG LOADING PEER {:?} ",p);
-                    });
-            },
             Event::BlockHeadersSynced { .. } => {}
-            // Event::ReceivedMerkleBlock { height, .. } => {}
+
             Event::MessageReceived { from, message } => match message.as_ref() {
                 NetworkMessage::MerkleBlock(block) => {
                     _ = from;
@@ -190,10 +161,6 @@ impl<C: Clock> BloomManager<C> {
                     }
                 }
                 NetworkMessage::Tx(tx) => {
-                    let txid = tx.txid();
-                    if self.matches.contains(&txid) {
-                        self.matches.pop_front();
-                    }
                     self.outbox.event(Event::ReceivedMatchedTx {
                         transaction: tx.to_owned(),
                     });
@@ -219,27 +186,26 @@ impl<C: Clock> BloomManager<C> {
         link: Link,
         tree: &T,
     ) {
-        // _ = tree;
-        // _ = height;
-        // _ = addr;
-        // if link.is_outbound() && !services.has(REQUIRED_SERVICES) {
-        //     return;
-        // }
-        // self.register(addr);
+        _ = tree;
+        _ = height;
+        _ = addr;
+        if link.is_outbound() && !services.has(REQUIRED_SERVICES) {
+            return;
+        }
+        self.register(addr);
     }
 
     /// Register a new peer.
-    fn register(
-        &mut self,
-        addr: PeerId,
-        // height: Height,
-        // preferred: bool,
-        // link: Link,
-    ) {
+    fn register(&mut self, addr: PeerId) {
         self.peers.insert(addr, Peer { has_filter: false });
     }
     /// send a bloom filter to all connected peers
     pub fn send_bloom_filter_all_connected(&mut self, filter: BloomFilter, peers: Vec<PeerId>) {
+        peers.iter().for_each(|p| {
+            self.peers.insert(*p, Peer { has_filter: true });
+            log::debug!("BFMG LOADING PEER {:?} ", p);
+        });
+
         let bloom_filter = FilterLoad {
             filter: filter.content,
             hash_funcs: filter.hashes,
@@ -312,18 +278,8 @@ impl<C: Clock> BloomManager<C> {
                 OnTimeout::Retry(0) | OnTimeout::Disconnect => {
                     self.outbox
                         .disconnect(peer, DisconnectReason::PeerTimeout("getmerkleblocks"));
-                    // sync = true;
                 }
-                OnTimeout::Retry(_n) => {
-                    // if let Some((addr, _)) = self.peers.sample_with(|a, p| {
-                    //     // TODO: After the first retry, it won't be a request candidate anymore,
-                    //     // since it will have `last_asked` set?
-                    //     *a != peer && self.is_request_candidate(a, p, &req.locators.0)
-                    // }) {
-                    //     let addr = *addr;
-                    //     self.request_blocks(addr, req.locators, timeout, OnTimeout::Retry(n - 1));
-                    // }
-                }
+                OnTimeout::Retry(_n) => {}
             }
         }
     }
@@ -364,6 +320,12 @@ impl<C: Clock> BloomManager<C> {
                 peer,
             );
 
+            self.outbox.event(Event::MerkleBlockScanStarted {
+                start: *range.start(),
+                stop: Some(*range.end()),
+                peer: *peer,
+            });
+
             let locators: Vec<BlockHash> = tree
                 .range(*range.start()..*range.end() + 1)
                 .map(|(_height, blockhash)| blockhash)
@@ -372,12 +334,7 @@ impl<C: Clock> BloomManager<C> {
             locators.iter().for_each(|block| {
                 bock_request.push(Inventory::FilteredBlock(*block));
             });
-            // let sent_at = self.clock.local_time();
-            // let req = GetBlocks {
-            //     locators: (locators.clone(), BlockHash::all_zeros()),
-            //     sent_at,
-            //     on_timeout: OnTimeout::Ignore,
-            // };
+
             self.outbox.get_data(*peer, bock_request);
             self.outbox.set_timer(timeout);
             self.rescan.reset();
@@ -389,10 +346,8 @@ impl<C: Clock> BloomManager<C> {
         &mut self,
         start: Bound<Height>,
         end: Bound<Height>,
-        // watch: Vec<Script>,
         tree: &T,
-    ) /*-> Vec<(Height, BlockHash)>*/
-    {
+    ) {
         self.rescan.restart(
             match start {
                 Bound::Unbounded => tree.height() + 1,
@@ -407,11 +362,6 @@ impl<C: Clock> BloomManager<C> {
             // watch,
         );
 
-        self.outbox.event(Event::MerkleBlockRescanStarted {
-            start: self.rescan.start,
-            stop: self.rescan.end,
-        });
-
         let height = tree.height();
         let start = self.rescan.start;
         let stop = self
@@ -421,9 +371,7 @@ impl<C: Clock> BloomManager<C> {
             .map(|h| Height::min(h, height))
             .unwrap_or(height);
         let range = start..=stop;
-        // if range.is_empty() {
-        //     return vec![];
-        // }
+
         // Start fetching the filters we can.
         let peers = self.peers.iter().map(|p| *p.0).collect::<Vec<_>>();
         match self.get_merkle_blocks(range.clone(), tree, peers) {
@@ -431,11 +379,6 @@ impl<C: Clock> BloomManager<C> {
             Err(GetMerkleBlocksError::NotConnected) => {}
             Err(err) => panic!("{}: Error fetching merkle blocks: {}", source!(), err),
         }
-        // When we reset the rescan range, there is the possibility of getting immediate cache
-        // hits from `get_cfilters`. Hence, process the filter queue.
-        // let (matches, _events, _) = self.rescan.process();
-
-        // matches
     }
 }
 

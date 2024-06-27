@@ -177,7 +177,7 @@ impl<C: Clock> InventoryManager<C> {
                 // }
                 NetworkMessage::Block(block) => {
                     self.received_block(&from, &block, tree);
-                    log::debug!(target: "p2p", "NetworkMessage::Block {:#?} from {}", block.block_hash(), from)
+                    log::debug!(target: "p2p", "Block {:#?} from {}", block.block_hash(), from)
                 }
                 NetworkMessage::Tx(tx) => {
                     let txid = tx.txid();

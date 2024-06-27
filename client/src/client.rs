@@ -579,8 +579,7 @@ impl<W: Waker> handle::Handle for Handle<W> {
         peer: Vec<PeerId>,
         all: bool,
     ) -> Result<(), handle::Error> {
-        let (sender, receive) = chan::bounded(1);
-        _ = self._command(Command::LoadBloomFilter((filter, peer, all), sender));
+        _ = self._command(Command::LoadBloomFilter((filter, peer)));
         // Ok(receive.recv()?)
         Ok(())
     }

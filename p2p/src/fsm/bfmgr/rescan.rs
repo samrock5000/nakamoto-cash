@@ -61,90 +61,11 @@ impl Rescan {
         // self.watch = watch.into_iter().collect();
         self.requested.clear();
     }
-    // /// Return info string on rescan state.
-    // pub fn info(&self) -> String {
-    //     format!(
-    //         "rescan current = {}, watch = {}, txs = {}, merkle block queue = {}, requested = {}",
-    //         self.current,
-    //         self.watch.len(),
-    //         self.transactions.len(),
-    //         self.received.len(),
-    //         self.requested.len()
-    //     )
-    // }
+
     /// Reset requested heights. This allows for requests to be re-issued.
     pub fn reset(&mut self) {
         self.requested.clear();
     }
-
-    // /// Rollback state to height.
-    // pub fn rollback(&mut self, to: Height) {
-    //     self.cache.rollback(to)
-    // }
-    // /// A merkle block was received.
-    // pub fn received(
-    //     &mut self,
-    //     height: Height,
-    //     merkle_block: MerkleBlock,
-    //     block_hash: BlockHash,
-    // ) -> bool {
-    //     let requested = self.requested.remove(&height);
-    //     if requested {
-    //         // We use a reference counted pointer here because it's possible for a filter to be
-    //         // both in the processing queue and in the cache, or only in one or the other.
-    //         let merkle_block = Rc::new(merkle_block);
-
-    //         self.cache.push(height, merkle_block.clone());
-    //         self.received
-    //             .insert(height, (merkle_block, block_hash, false));
-    //     }
-    //     requested
-    // }
-    /// Process the next merkle blocks in the queue that can be processed.
-    ///
-    /// Checks whether any of the queued merkle blocks is next in line (by height) and if so,
-    /// processes it and returns the result of trying to match it with the watch list.
-    // pub fn process(&mut self) -> (Vec<(Height, BlockHash)>, Vec<Event>, Height) {
-    //     let mut events = Vec::new();
-    //     let mut block_matches = Vec::new();
-    //     let mut matches = Vec::new();
-    //     let mut indexes = Vec::new();
-    //     let mut current = self.current;
-    //     let old = current;
-
-    //     while let Some((merkle_block, block_hash, cached)) = self.received.remove(&current) {
-    //         _ = merkle_block.extract_matches(&mut matches, &mut indexes);
-    //         let matched = matches.len() > 0;
-    //         let (matched, _valid) = if matched {
-    //             (matched, true)
-    //         } else {
-    //             (false, false)
-    //         };
-
-    //         if matched {
-    //             block_matches.push((current, block_hash));
-    //         }
-    //         let merkle_block = merkle_block.as_ref().clone();
-    //         events.push(Event::MerkleBlockProcessed {
-    //             height: current,
-    //             matches: matches.clone(),
-    //             matched,
-    //             cached,
-    //             merkle_block,
-    //         });
-    //         current += 1;
-    //     }
-    //     self.current = current;
-
-    //     if let Some(stop) = self.end {
-    //         if self.current == stop {
-    //             self.active = false;
-    //             events.push(Event::MerkleBlockRescanStopped { height: stop });
-    //         }
-    //     }
-
-    //     (block_matches, events, current - old)
-    // }
 
     /// Given a range of heights, return the ranges that are missing.
     /// This is useful to figure out which ranges to fetch while ensuring we don't request

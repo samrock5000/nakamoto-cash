@@ -39,15 +39,6 @@ pub enum Event {
         /// Peer address.
         peer: PeerId,
     },
-    /// A BloomFilter was received from client
-    LoadBloomFilter {
-        /// the peers
-        peers: Vec<PeerId>,
-        /// the bloom filter sent from client
-        filter: FilterLoad,
-        /// send to connected peers
-        all: bool,
-    },
 
     /// Peer connected. This is fired when the physical TCP/IP connection
     /// is established. Use [`Event::PeerNegotiated`] to know when the P2P handshake
@@ -158,19 +149,7 @@ pub enum Event {
         /// Matching block.
         block: Block,
     },
-    /// We received a merkle block and extracted transactions matches.
-    MerkleBlockProcessed {
-        /// A merkle block was proccesed.
-        merkle_block: MerkleBlock,
-        /// The height at which the block was processed.
-        height: Height,
-        /// The matches this merkle block returned.
-        matches: Vec<Txid>,
-        /// Whether or not this block matched any of the watched scripts.
-        matched: bool,
-        /// Filter was cached.
-        cached: bool,
-    },
+
     /// We received a merkle block from the network.
     ReceivedMerkleBlock {
         /// Block height.
@@ -266,11 +245,13 @@ pub enum Event {
         height: Height,
     },
     /// A merkle block rescan has started.
-    MerkleBlockRescanStarted {
+    MerkleBlockScanStarted {
         /// Start height.
         start: Height,
         /// End height.
         stop: Option<Height>,
+        /// peer
+        peer: PeerId,
     },
     /// Filter headers synced up to block header height.
     FilterHeadersSynced {
@@ -316,26 +297,18 @@ impl fmt::Display for Event {
             Self::Initializing => {
                 write!(fmt, "Initializing peer-to-peer system..")
             }
-            // TODO update filter to to segment
+
             Self::PeerLoadedBloomFilter { filter, peer } => {
                 _ = filter;
                 write!(fmt, "Bloom filter loaded to peer {}", peer)
             }
-            Self::MerkleBlockRescanStarted { start, .. } => {
+            Self::MerkleBlockScanStarted { start, .. } => {
                 write!(fmt, "A merkle block rescan started at height {start}")
             }
             Self::MerkleBlockRescanStopped { height } => {
                 write!(fmt, "A merkle block resan stopped {height}")
             }
-            Self::LoadBloomFilter { peers, filter, all } => {
-                _ = filter;
-                _ = peers;
-                write!(
-                    fmt,
-                    "A bloom filter load request from client, all peers {}",
-                    all
-                )
-            }
+
             Self::Ready { .. } => {
                 write!(fmt, "Ready to process events and commands")
             }
@@ -350,7 +323,6 @@ impl fmt::Display for Event {
                 merkle_block,
             } => {
                 let hash = merkle_block.header.block_hash();
-                _ = merkle_block;
                 write!(fmt, "MerkleBlock {hash} received at height {height}")
             }
             Self::BlockFilterImported {
@@ -399,9 +371,7 @@ impl fmt::Display for Event {
                     height
                 )
             }
-            Self::MerkleBlockProcessed { .. } => {
-                write!(fmt, "Merkle Block processed")
-            }
+
             Self::BlockMatched { height, .. } => {
                 write!(fmt, "Block matched at height {}", height)
             }

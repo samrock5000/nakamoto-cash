@@ -290,10 +290,7 @@ pub enum Command {
     /// Get a previously submitted transaction.
     GetSubmittedTransaction(Txid, chan::Sender<Option<Transaction>>),
     /// Load Bloom filters to the .
-    LoadBloomFilter(
-        (BloomFilter, Vec<PeerId>, bool),
-        chan::Sender<(BloomFilter, Vec<PeerId>, bool)>,
-    ),
+    LoadBloomFilter((BloomFilter, Vec<PeerId>)),
     /// Get mempool
     GetMempool,
     /// get non bloom loaded peers
@@ -328,7 +325,7 @@ impl fmt::Debug for Command {
             Self::SubmitTransaction(tx, _) => write!(f, "SubmitTransaction({:?})", tx),
             Self::GetSubmittedTransaction(txid, _) => write!(f, "GetSubmittedTransaction({txid})"),
             Self::GetPeersNotBloomFiltered(_) => write!(f, "GetPeersNotBloomFilterd"),
-            Self::LoadBloomFilter(_, _) => {
+            Self::LoadBloomFilter(_) => {
                 write!(f, "LoadBloomFilter Request" /* filter */,)
             }
         }
@@ -813,10 +810,10 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
                 let tx = self.invmgr.get_submitted_tx(txid);
                 reply.send(tx).ok();
             }
-            Command::LoadBloomFilter(bloom_data, reply) => {
-                // true => self.bfmgr.send_bloom_filter_all_connected(filter, peers),
+            Command::LoadBloomFilter((filter, peers)) => {
+                self.bfmgr.send_bloom_filter_all_connected(filter, peers);
                 // _ => self.bfmgr.send_bloom_filter_single_peer(filter, peers[0]),
-                reply.send(bloom_data).ok();
+                // reply.send(bloom_data).ok();
             }
             Command::GetMempool => self.bfmgr.get_mempool(),
             Command::GetPeersNotBloomFiltered(reply) => {
