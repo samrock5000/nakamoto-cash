@@ -204,7 +204,6 @@ impl<C: Clock> BloomManager<C> {
     pub fn send_bloom_filter_all_connected(&mut self, filter: BloomFilter, peers: Vec<PeerId>) {
         peers.iter().for_each(|p| {
             self.peers.insert(*p, Peer { has_filter: true });
-            log::debug!("BFMG LOADING PEER {:?} ", p);
         });
 
         let bloom_filter = FilterLoad {
