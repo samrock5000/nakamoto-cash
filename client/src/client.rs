@@ -274,9 +274,6 @@ impl<R: Reactor> Client<R> {
 
         let home = config.root.join(".nakamoto");
 
-        #[cfg(target_os = "android")]
-        let home = config.root.join(home);
-
         let network = config.network;
         let dir = home.join(network.as_str());
 
