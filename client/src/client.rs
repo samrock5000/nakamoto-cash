@@ -276,9 +276,7 @@ impl<R: Reactor> Client<R> {
 
         let network = config.network;
         let dir = home.join(network.as_str());
-
         let listen = config.listen.clone();
-
         fs::create_dir_all(&dir)?;
         let genesis = network.genesis();
 
