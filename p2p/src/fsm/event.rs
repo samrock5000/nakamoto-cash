@@ -245,6 +245,8 @@ pub enum Event {
     MerkleBlockRescanStopped {
         /// Stop height.
         height: Height,
+        /// peer
+        peer: PeerId,
     },
     /// A merkle block rescan has started.
     MerkleBlockScanStarted {
@@ -307,7 +309,7 @@ impl fmt::Display for Event {
             Self::MerkleBlockScanStarted { start, .. } => {
                 write!(fmt, "A merkle block rescan started at height {start}")
             }
-            Self::MerkleBlockRescanStopped { height } => {
+            Self::MerkleBlockRescanStopped { height, .. } => {
                 write!(fmt, "A merkle block resan stopped {height}")
             }
 

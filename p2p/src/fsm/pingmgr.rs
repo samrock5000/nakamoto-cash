@@ -21,7 +21,7 @@ use super::{
 /// Time interval to wait between sent pings.
 pub const PING_INTERVAL: LocalDuration = LocalDuration::from_mins(2);
 /// Time to wait to receive a pong when sending a ping.
-pub const PING_TIMEOUT: LocalDuration = LocalDuration::from_secs(60 * 10);
+pub const PING_TIMEOUT: LocalDuration = LocalDuration::from_secs(60 * 5);
 
 /// Maximum number of latencies recorded per peer.
 const MAX_RECORDED_LATENCIES: usize = 64;
@@ -30,6 +30,7 @@ const MAX_RECORDED_LATENCIES: usize = 64;
 enum State {
     AwaitingPong { nonce: u64, since: LocalTime },
     Idle { since: LocalTime },
+    Scanning,
 }
 
 #[derive(Debug)]
@@ -97,6 +98,19 @@ impl<C: Clock> PingManager<C> {
             Event::PeerDisconnected { addr, .. } => {
                 self.peers.remove(&addr);
             }
+            Event::MerkleBlockScanStarted { peer, .. } => {
+                let peer = self.peers.get_mut(&peer);
+                if let Some(peer) = peer {
+                    peer.state = State::Scanning;
+                }
+            }
+            Event::MerkleBlockRescanStopped { peer, .. } => {
+                let now = self.clock.local_time();
+                let peer = self.peers.get_mut(&peer);
+                if let Some(peer) = peer {
+                    peer.state = State::Idle { since: now };
+                }
+            }
             Event::MessageReceived { from, message } => match message.as_ref() {
                 NetworkMessage::Ping(nonce) => {
                     self.received_ping(from, *nonce);
@@ -159,6 +173,7 @@ impl<C: Clock> PingManager<C> {
                         peer.state = State::AwaitingPong { nonce, since: now };
                     }
                 }
+                State::Scanning => {}
             }
         }
     }
@@ -192,6 +207,7 @@ impl<C: Clock> PingManager<C> {
                 }
                 // Unsolicited or redundant `pong`. Ignore.
                 State::Idle { .. } => {}
+                State::Scanning => {}
             }
         }
         false

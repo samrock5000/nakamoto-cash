@@ -26,11 +26,11 @@
 //! assert_eq!(&bytes[..], &[0xF9, 0xBE, 0xB4, 0xD9]);
 //! ```
 
-use core::{fmt, ops, convert::From};
+use core::{convert::From, fmt, ops};
 
-use crate::io;
-use crate::consensus::encode::{self, Encodable, Decodable};
+use crate::consensus::encode::{self, Decodable, Encodable};
 use crate::internal_macros::user_enum;
+use crate::io;
 
 /// Version of the protocol as appearing in network message headers
 /// This constant is used to signal to other peers which features you support.
@@ -89,10 +89,9 @@ impl Network {
             // so it cannot be identified by disk magic.
             0x92A722CD => Some(Network::Testnet4),
             0xC42DC2BA => Some(Network::Scalenet),
-            _ => None
+            _ => None,
         }
     }
-
 
     /// Creates a `Network` from the net magic bytes.
     ///
@@ -114,7 +113,7 @@ impl Network {
             // so it cannot be identified by disk magic.
             0xAFDAB7E2 => Some(Network::Testnet4),
             0xA2E1AFC3 => Some(Network::Scalenet),
-            _ => None
+            _ => None,
         }
     }
 
@@ -265,7 +264,7 @@ impl fmt::Display for ServiceFlags {
                     write!(f, stringify!($f))?;
                     flags.remove(ServiceFlags::$f);
                 }
-            }
+            };
         }
         write!(f, "ServiceFlags(")?;
         write_flag!(NETWORK);
@@ -346,18 +345,9 @@ mod tests {
 
     #[test]
     fn serialize_test() {
-        assert_eq!(
-            serialize(&Network::Bitcoin.disk_magic()),
-            &[0xf9, 0xbe, 0xb4, 0xd9]
-        );
-        assert_eq!(
-            serialize(&Network::Testnet.disk_magic()),
-            &[0x0b, 0x11, 0x09, 0x07]
-        );
-        assert_eq!(
-            serialize(&Network::Regtest.disk_magic()),
-            &[0xfa, 0xbf, 0xb5, 0xda]
-        );
+        assert_eq!(serialize(&Network::Bitcoin.disk_magic()), &[0xf9, 0xbe, 0xb4, 0xd9]);
+        assert_eq!(serialize(&Network::Testnet.disk_magic()), &[0x0b, 0x11, 0x09, 0x07]);
+        assert_eq!(serialize(&Network::Regtest.disk_magic()), &[0xfa, 0xbf, 0xb5, 0xda]);
 
         assert_eq!(
             deserialize(&[0xf9, 0xbe, 0xb4, 0xd9]).ok(),

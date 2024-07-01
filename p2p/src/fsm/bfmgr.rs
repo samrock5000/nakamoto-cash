@@ -40,6 +40,8 @@ pub const DEFAULT_FILTER_CACHE_SIZE: usize = 1024 * 1024 * 4; // 1 MB.
 #[derive(Debug, Clone)]
 pub struct Peer {
     has_filter: bool,
+    scan_start: Height,
+    scan_stop: Height,
 }
 
 /// What to do if a timeout for a peer is received.
@@ -153,6 +155,19 @@ impl<C: Clock> BloomManager<C> {
                 NetworkMessage::MerkleBlock(block) => {
                     _ = from;
                     if let Some((height, _)) = tree.get_block(&block.header.block_hash()) {
+                        if tree.height() == height {
+                            let merkle_stop =
+                                Event::MerkleBlockRescanStopped { height, peer: from };
+                            self.outbox.event(merkle_stop);
+                        }
+                        for peer in self.peers.iter() {
+                            if height == peer.1.scan_stop {
+                                let merkle_stop =
+                                    Event::MerkleBlockRescanStopped { height, peer: from };
+                                self.outbox.event(merkle_stop);
+                            }
+                        }
+
                         let event = Event::ReceivedMerkleBlock {
                             height,
                             merkle_block: block.clone(),
@@ -198,12 +213,26 @@ impl<C: Clock> BloomManager<C> {
 
     /// Register a new peer.
     fn register(&mut self, addr: PeerId) {
-        self.peers.insert(addr, Peer { has_filter: false });
+        self.peers.insert(
+            addr,
+            Peer {
+                has_filter: false,
+                scan_start: 0,
+                scan_stop: 0,
+            },
+        );
     }
     /// send a bloom filter to all connected peers
     pub fn send_bloom_filter_all_connected(&mut self, filter: BloomFilter, peers: Vec<PeerId>) {
         peers.iter().for_each(|p| {
-            self.peers.insert(*p, Peer { has_filter: true });
+            self.peers.insert(
+                *p,
+                Peer {
+                    has_filter: true,
+                    scan_start: 0,
+                    scan_stop: 0,
+                },
+            );
         });
 
         let bloom_filter = FilterLoad {
@@ -319,6 +348,11 @@ impl<C: Clock> BloomManager<C> {
                 range.end(),
                 peer,
             );
+
+            if let Some(peer) = self.peers.get_mut(&peer) {
+                peer.scan_start = *range.start();
+                peer.scan_stop = *range.end()
+            }
 
             self.outbox.event(Event::MerkleBlockScanStarted {
                 start: *range.start(),
