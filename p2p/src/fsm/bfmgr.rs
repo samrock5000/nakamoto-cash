@@ -153,7 +153,6 @@ impl<C: Clock> BloomManager<C> {
 
             Event::MessageReceived { from, message } => match message.as_ref() {
                 NetworkMessage::MerkleBlock(block) => {
-                    _ = from;
                     if let Some((height, _)) = tree.get_block(&block.header.block_hash()) {
                         if tree.height() == height {
                             let merkle_stop =
@@ -180,6 +179,17 @@ impl<C: Clock> BloomManager<C> {
                     self.outbox.event(Event::ReceivedMatchedTx {
                         transaction: tx.to_owned(),
                     });
+                }
+                NetworkMessage::Inv(inv) => {
+                    let mut tx_inv = vec![];
+                    inv.iter().for_each(|i| match i {
+                        Inventory::Transaction(tx) => {
+                            tx_inv.push(Inventory::Transaction(*tx));
+                        }
+                        _ => {}
+                    });
+                    let payload = NetworkMessage::GetData(tx_inv);
+                    self.outbox.message(from, payload);
                 }
 
                 _ => {}

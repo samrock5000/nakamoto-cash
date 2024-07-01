@@ -307,10 +307,10 @@ impl fmt::Display for Event {
                 write!(fmt, "Bloom filter loaded to peer {}", peer)
             }
             Self::MerkleBlockScanStarted { start, .. } => {
-                write!(fmt, "A merkle block rescan started at height {start}")
+                write!(fmt, "A merkle block scan started at height {start}")
             }
             Self::MerkleBlockRescanStopped { height, .. } => {
-                write!(fmt, "A merkle block resan stopped {height}")
+                write!(fmt, "A merkle block scan stopped {height}")
             }
 
             Self::Ready { .. } => {
