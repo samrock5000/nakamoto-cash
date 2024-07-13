@@ -575,7 +575,6 @@ impl<W: Waker> handle::Handle for Handle<W> {
         &self,
         filter: BloomFilter,
         peer: Vec<PeerId>,
-        all: bool,
     ) -> Result<(), handle::Error> {
         _ = self._command(Command::LoadBloomFilter((filter, peer)));
         // Ok(receive.recv()?)
