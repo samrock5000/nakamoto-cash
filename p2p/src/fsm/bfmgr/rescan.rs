@@ -58,7 +58,6 @@ impl Rescan {
         self.start = start;
         self.current = start;
         self.end = end;
-        // self.watch = watch.into_iter().collect();
         self.requested.clear();
     }
 

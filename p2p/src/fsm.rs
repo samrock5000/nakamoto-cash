@@ -25,7 +25,6 @@ use addrmgr::AddressManager;
 use bfmgr::BloomManager;
 use cbfmgr::FilterManager;
 use invmgr::InventoryManager;
-use nakamoto_common::bitcoin::network::message_bloom::FilterLoad;
 use nakamoto_common::bitcoin::util::bloom::BloomFilter;
 use output::Outbox;
 use peermgr::PeerManager;

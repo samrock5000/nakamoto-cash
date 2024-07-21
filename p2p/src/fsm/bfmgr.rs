@@ -2,12 +2,10 @@
 // //!
 // //! Manages BIP 37 compact block filter sync.
 
-use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::ops::{Bound, RangeInclusive};
 
 use nakamoto_common::bitcoin::util::bloom::BloomFilter;
-// use nakamoto_common::bitcoin::util::bloom::BloomFilter;
 use thiserror::Error;
 
 mod rescan;
@@ -258,6 +256,10 @@ impl<C: Clock> BloomManager<C> {
         };
 
         for peer in peers.iter() {
+            self.outbox.event(Event::PeerLoadedBloomFilter {
+                filter: bloom_filter.clone(),
+                peer: *peer,
+            });
             self.outbox
                 .send_bloom_filter_load(peer, bloom_filter.clone())
         }

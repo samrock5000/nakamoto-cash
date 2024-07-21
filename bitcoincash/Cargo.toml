@@ -59,8 +59,9 @@ actual-serde = { package = "serde", version = "1", default-features = false, fea
     "alloc",
 ], optional = true }
 hashbrown = { version = "0.8", optional = true }
-murmur3 = "0.4.1"
+murmur3 = { git = "https://github.com/stusmall/murmur3" }
 rand = "0.8.5"
+bit-vec = "0.8.0"
 
 [dev-dependencies]
 serde_json = "<1.0.45"
