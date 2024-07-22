@@ -29,6 +29,7 @@ impl From<Bloom<u8>> for BloomFilter {
     }
 }
 
+// modified https://github.com/jedisct1/rust-bloom-filter
 /// Bloom filter structure
 #[derive(Clone, Debug)]
 pub struct Bloom<T: ?Sized> {
@@ -79,26 +80,28 @@ impl<T: ?Sized> Bloom<T> {
     where
         T: Hash,
     {
-        let mut v = Vec::with_capacity(36_000);
-        v = self.bit_vec.to_bytes();
-        for k in 0..self.k_num {
-            let index = self.hash(k, data);
-            let position = 1 << (7 & index);
-            v[index as usize >> 3] |= position;
+        // let mut v = Vec::with_capacity(36_000);
+        // let mut v = self.bit_vec.to_bytes();
+        // for k in 0..self.k_num {
+        //     let index = self.hash(k, data);
+        //     let bit_offset = 1 << (7 & index);
+        //     v[index as usize >> 3] |= bit_offset;
+        // }
+        // self.bit_vec = BitVec::from_bytes(&v);
+        for k_i in 0..self.k_num {
+            let bit_offset = (self.hash(k_i, data) % self.bitmap_bits as u32) as usize;
+            self.bit_vec.set(bit_offset, true);
         }
-        self.bit_vec = BitVec::from_bytes(&v);
     }
 
     /// Check if an item is present in the set.
     /// There can be false positives, but no false negatives.
-    pub fn check(&self, item: &mut Vec<u8>) -> bool
+    pub fn check(&self, data: &mut Vec<u8>) -> bool
     where
         T: Hash,
     {
-        // let mut hashes = [0u64; 2];
         for k_i in 0..self.k_num {
-            let hash = self.hash(k_i, item) as u32 ^ (self.tweak as u32);
-            let bit_offset = (hash % (self.bitmap_bits as u32 / 8)) as usize;
+            let bit_offset = (self.hash(k_i, data) as u64 % self.bitmap_bits) as usize;
 
             if self.bit_vec.get(bit_offset).unwrap() == false {
                 return false;
@@ -124,52 +127,61 @@ impl<T: ?Sized> Bloom<T> {
     }
 }
 
-// fn bloom_hash(&self, k_i: u32, item: &T) -> u64
-// where
-//     T: Hash,
-// {
-//     let mut data = Vec::new();
-//     item.hash(&mut data);
-//     let hash = self.hash(k_i, &mut data);
-//     hash as u64
-// }
-//
 mod test {
     #[test]
     fn test_bloom2() {
         use super::Bloom;
         // use crate::consensus::Encodable;
-
-        // let mut d = Vec::from_hex("347eeb9896b64a484d1019a16075c194a17e6081").unwrap();
-        // let mut a = Vec::from_hex("347eeb9896b64a484d1019a16075c194a17e6081").unwrap();
-        // let mut e = Vec::from_hex("").unwrap();
         let mut bloom: Bloom<u8> = Bloom::new_for_fp_rate(1000, 0.01);
-        let mut xxx = vec![];
+        let mut vec_a = vec![];
+        let mut vec_b = vec![];
+        let mut vec_c = vec![];
+        let mut vec_d = vec![];
+        let mut vec_e = vec![];
+        let mut vec_f = vec![];
+        let mut vec_g = vec![];
+        let mut vec_h = vec![];
         for _ in 0..100 {
             let a = rand::random::<u8>();
-            xxx.push(a);
-            bloom.set(&mut vec![a]);
+            let b = rand::random::<u8>();
+            let c = rand::random::<u8>();
+            let d = rand::random::<u8>();
+            let e = rand::random::<u8>();
+            let f = rand::random::<u8>();
+            let g = rand::random::<u8>();
+            let h = rand::random::<u8>();
+            vec_a.push(a);
+            vec_b.push(b);
+            vec_c.push(c);
+            vec_d.push(d);
+            vec_e.push(e);
+            vec_f.push(f);
+            vec_g.push(g);
+            vec_h.push(h);
         }
-        // let mut f = Vec::from_hex("347eeb9896b64a484d1019a16075c194a17e6082").unwrap();
+        // // println!("VEC A {:?}", vec_a);
+        // println!("bit vec unset {:?}", bloom.bit_vec);
 
-        // let buf = Vec::<u8>::new();
-        // bloom.set(&mut d);
-        // bloom.set(&mut d);
-        // bloom.set(&mut e);
-        // bloom.set(&mut d);
-        // bloom.set(&mut d);
-        // bloom.set(&mut e);
-        // bloom.set(&mut d);
-        // bloom.set(&mut a);
-        // x.check(&mut d);
+        // bloom.set(&mut vec_a);
+        // println!("bit vec set a {:?}", bloom.bit_vec);
 
-        // assert!(!x.check(&mut f));
-        // assert!(!x.check(&mut e));
-        // assert!(x.check(&mut d));
-        // assert!(x.check(&mut a));
-        // _ = x.consensus_encode(&mut buf);
+        // bloom.set(&mut vec_b);
+        // println!("bit vec set b {:?}", bloom.bit_vec);
+
+        bloom.set(&mut vec_a);
+        bloom.set(&mut vec_b);
+        bloom.set(&mut vec_c);
+        bloom.set(&mut vec_d);
+
+        assert!(bloom.check(&mut vec_a));
+        assert!(bloom.check(&mut vec_b));
+        assert!(bloom.check(&mut vec_c));
+        assert!(bloom.check(&mut vec_d));
+        assert!(!bloom.check(&mut vec_e));
+        assert!(!bloom.check(&mut vec_f));
+        assert!(!bloom.check(&mut vec_g));
+        assert!(!bloom.check(&mut vec_h));
         // assert_eq!(buf, vec![3, 1, 27, 24, 8, 0, 0, 0, 243, 224, 1, 0, 1])
-        println!("{:?}", bloom);
-        // println!("{:?}", bloom.bit_vec.to_bytes());
+        // println!("{:?}", bloom);
     }
 }
