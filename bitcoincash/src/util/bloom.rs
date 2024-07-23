@@ -33,9 +33,10 @@ impl From<Bloom<u8>> for BloomFilter {
 /// Bloom filter structure
 #[derive(Clone, Debug)]
 pub struct Bloom<T: ?Sized> {
-    ///
+    /// a bit vector
     pub bit_vec: BitVec,
-    bitmap_bits: u64,
+    /// size in  bits
+    pub bitmap_bits: u64,
     k_num: u32,
     tweak: u32,
 
@@ -80,18 +81,13 @@ impl<T: ?Sized> Bloom<T> {
     where
         T: Hash,
     {
-        // let mut v = Vec::with_capacity(36_000);
-        // let mut v = self.bit_vec.to_bytes();
-        // for k in 0..self.k_num {
-        //     let index = self.hash(k, data);
-        //     let bit_offset = 1 << (7 & index);
-        //     v[index as usize >> 3] |= bit_offset;
-        // }
-        // self.bit_vec = BitVec::from_bytes(&v);
-        for k_i in 0..self.k_num {
-            let bit_offset = (self.hash(k_i, data) % self.bitmap_bits as u32) as usize;
-            self.bit_vec.set(bit_offset, true);
+        let mut v = self.bit_vec.to_bytes();
+        for k in 0..self.k_num {
+            let index = self.hash(k, data);
+            let bit_offset = 1 << (7 & index);
+            v[index as usize >> 3] |= bit_offset;
         }
+        self.bit_vec = BitVec::from_bytes(&v);
     }
 
     /// Check if an item is present in the set.
@@ -100,10 +96,12 @@ impl<T: ?Sized> Bloom<T> {
     where
         T: Hash,
     {
-        for k_i in 0..self.k_num {
-            let bit_offset = (self.hash(k_i, data) as u64 % self.bitmap_bits) as usize;
-
-            if self.bit_vec.get(bit_offset).unwrap() == false {
+        if self.k_num == 0 {
+            return false;
+        }
+        for i in 0..self.k_num {
+            let index = self.hash(i, data) as usize;
+            if self.bit_vec.to_bytes()[index >> 3] & (1 << (7 & index)) == 0 {
                 return false;
             }
         }
@@ -132,7 +130,7 @@ mod test {
     fn test_bloom2() {
         use super::Bloom;
         // use crate::consensus::Encodable;
-        let mut bloom: Bloom<u8> = Bloom::new_for_fp_rate(1000, 0.01);
+        let mut bloom: Bloom<u8> = Bloom::new_for_fp_rate(7, 0.001);
         let mut vec_a = vec![];
         let mut vec_b = vec![];
         let mut vec_c = vec![];
@@ -159,14 +157,6 @@ mod test {
             vec_g.push(g);
             vec_h.push(h);
         }
-        // // println!("VEC A {:?}", vec_a);
-        // println!("bit vec unset {:?}", bloom.bit_vec);
-
-        // bloom.set(&mut vec_a);
-        // println!("bit vec set a {:?}", bloom.bit_vec);
-
-        // bloom.set(&mut vec_b);
-        // println!("bit vec set b {:?}", bloom.bit_vec);
 
         bloom.set(&mut vec_a);
         bloom.set(&mut vec_b);
@@ -177,11 +167,11 @@ mod test {
         assert!(bloom.check(&mut vec_b));
         assert!(bloom.check(&mut vec_c));
         assert!(bloom.check(&mut vec_d));
+
+        //probalistic, so can fail 0.01
         assert!(!bloom.check(&mut vec_e));
         assert!(!bloom.check(&mut vec_f));
         assert!(!bloom.check(&mut vec_g));
         assert!(!bloom.check(&mut vec_h));
-        // assert_eq!(buf, vec![3, 1, 27, 24, 8, 0, 0, 0, 243, 224, 1, 0, 1])
-        // println!("{:?}", bloom);
     }
 }
