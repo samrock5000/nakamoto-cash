@@ -783,11 +783,13 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
                 // output scripts. This may trigger false-positives, since the same
                 // invoice (address) can be re-used by multiple transactions, ie. outputs
                 // can figure in more than one block.
-                self.cbfmgr.watch_transaction(&tx);
+                // NOT USING CBF for now
+                // self.cbfmgr.watch_transaction(&tx);
 
-                let peers = self.invmgr.announce(tx);
-
+                let peers = self.invmgr.announce(tx.clone());
                 if let Some(peers) = NonEmpty::from_vec(peers) {
+                    self.outbox.message(*peers.first(), NetworkMessage::Tx(tx));
+
                     reply.send(Ok(peers)).ok();
                 } else {
                     reply.send(Err(CommandError::NotConnected)).ok();
