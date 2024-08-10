@@ -1,6 +1,6 @@
-// //! Bloom Filter Manager.
-// //!
-// //! Manages BIP 37 compact block filter sync.
+//! Bloom Filter Manager.
+//!
+//! Manages BIP 37 compact block filter sync.
 
 use std::net::SocketAddr;
 use std::ops::{Bound, RangeInclusive};
