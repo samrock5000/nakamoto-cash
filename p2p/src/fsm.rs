@@ -788,7 +788,7 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
 
                 let peers = self.invmgr.announce(tx.clone());
                 if let Some(peers) = NonEmpty::from_vec(peers) {
-                    self.outbox.message(*peers.first(), NetworkMessage::Tx(tx));
+                    // self.outbox.message(*peers.first(), NetworkMessage::Tx(tx));
 
                     reply.send(Ok(peers)).ok();
                 } else {

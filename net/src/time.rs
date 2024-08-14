@@ -215,7 +215,11 @@ impl std::ops::Div<u32> for LocalDuration {
     type Output = LocalDuration;
 
     fn div(self, other: u32) -> LocalDuration {
-        LocalDuration(self.0 / other as u128)
+        if let Some(num) = self.0.checked_div(other as u128) {
+            LocalDuration(num)
+        } else {
+            LocalDuration(0)
+        }
     }
 }
 

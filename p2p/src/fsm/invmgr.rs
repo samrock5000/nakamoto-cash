@@ -287,6 +287,7 @@ impl<C: Clock> InventoryManager<C> {
         }
 
         for addr in disconnect {
+            log::debug!("THIS IS THE CAUSE OF THE DISCONNECT!!!!!!");
             self.peers.remove(&addr);
             self.outbox.event(Event::PeerTimedOut { addr });
         }
@@ -455,6 +456,9 @@ impl<C: Clock> InventoryManager<C> {
 
         // Insert transaction into the peer outboxes and keep a local copy for re-broadcasting later.
         self.mempool.insert(txid, tx.clone());
+        if let Some((p, _)) = self.peers.sample() {
+            self.outbox.message(*p, NetworkMessage::Tx(tx.clone()));
+        }
 
         for (addr, peer) in self.peers.iter_mut().filter(|(_, p)| p.relay) {
             peer.outbox.insert(txid, tx.clone());
