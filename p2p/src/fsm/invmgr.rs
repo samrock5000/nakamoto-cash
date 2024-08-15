@@ -287,7 +287,6 @@ impl<C: Clock> InventoryManager<C> {
         }
 
         for addr in disconnect {
-            log::debug!("THIS IS THE CAUSE OF THE DISCONNECT!!!!!!");
             self.peers.remove(&addr);
             self.outbox.event(Event::PeerTimedOut { addr });
         }
