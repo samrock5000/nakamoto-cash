@@ -272,7 +272,7 @@ impl<R: Reactor> Client<R> {
     ) -> Result<ClientRunner<R>, Error> {
         let loading = loading.into();
 
-        let home = config.root.join(".nakamoto");
+        let home = config.root.join(".nakamoto-cash");
 
         let network = config.network;
         let dir = home.join(network.as_str());
