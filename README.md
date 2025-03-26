@@ -18,7 +18,7 @@ to it via a foreign function interface (FFI).
 ---
 
     [dependencies]
-    nakamoto-cash = { git = "https://github.com/samrock5000/nakamoto"  }
+    nakamoto-cash = { git = "https://github.com/samrock5000/nakamoto-cash"  }
 ## Design
 
 Nakamoto is split into several crates, each handling a different aspect of the
