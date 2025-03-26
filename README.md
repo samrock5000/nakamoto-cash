@@ -1,6 +1,9 @@
 nakamoto
 ========
 
+This is a fork of nakamoto to sync with the bitcoin cash network.
+with added support for bip37;
+
 Nakamoto is a privacy-preserving Bitcoin light-client implementation in Rust,
 with a focus on low resource utilization, modularity and security.
 
@@ -15,8 +18,7 @@ to it via a foreign function interface (FFI).
 ---
 
     [dependencies]
-    nakamoto = "0.4.0"
-
+    nakamoto-cash = { git = "https://github.com/samrock5000/nakamoto"  }
 ## Design
 
 Nakamoto is split into several crates, each handling a different aspect of the
