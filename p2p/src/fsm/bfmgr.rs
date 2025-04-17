@@ -264,6 +264,13 @@ impl<C: Clock> BloomManager<C> {
                 .send_bloom_filter_load(peer, bloom_filter.clone())
         }
     }
+    pub fn send_bloom_filter_clear(&mut self,) {
+
+        for peer in self.peers.iter() {
+            self.outbox
+                .message(peer.0.clone() ,NetworkMessage::FilterClear);
+        }
+    }
 
     pub fn send_bloom_filter_single_peer(&mut self, filter: BloomFilter, peer: PeerId) {
         let bloom_filter = FilterLoad {

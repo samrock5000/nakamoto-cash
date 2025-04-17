@@ -294,12 +294,15 @@ pub enum Command {
     GetMempool,
     /// get non bloom loaded peers
     GetPeersNotBloomFiltered(chan::Sender<Vec<PeerId>>),
+    /// Clear Bloom Filters
+    BloomFilterClear,
 }
 
 impl fmt::Debug for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::GetMempool => write!(f, "GetMempool"),
+            Self::BloomFilterClear => write!(f, "Command Filter Clear"),
             Self::GetBlockByHeight(height, _) => write!(f, "GetBlockByHeight({})", height),
             Self::GetBlock(hash) => write!(f, "GetBlock({})", hash),
             Self::GetPeers(flags, _) => write!(f, "GetPeers({})", flags),
@@ -821,6 +824,10 @@ impl<T: BlockTree, F: Filters, P: peer::Store, C: AdjustedClock<PeerId>> StateMa
                 let peers = self.bfmgr.by_ref().get_peers_not_filter_loaded();
 
                 reply.send(peers).ok();
+            }
+            Command::BloomFilterClear => {
+                 self.bfmgr.by_ref().send_bloom_filter_clear();
+
             }
         }
     }
